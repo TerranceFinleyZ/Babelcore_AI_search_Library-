@@ -1,0 +1,57 @@
+import type { Appearance } from "@clerk/nextjs/server";
+
+export const clerkAppearance: Appearance = {
+  variables: {
+    colorBackground: "#09090b",
+    colorInputBackground: "#18181b",
+    colorPrimary: "#f97316",
+    colorText: "#ffffff",
+    colorTextSecondary: "#ffffff",
+    colorInputText: "#ffffff",
+    colorNeutral: "#ffffff",
+    borderRadius: "0.75rem",
+  },
+  elements: {
+    card: {
+      background: "#09090b",
+      border: "1px solid rgba(249,115,22,0.2)",
+      boxShadow: "none",
+    },
+    headerTitle: { color: "#f97316" },
+    headerSubtitle: { color: "#ffffff" },
+    socialButtonsBlockButton: {
+      background: "#18181b",
+      border: "1px solid #3f3f46",
+      color: "#ffffff",
+    },
+    socialButtonsBlockButtonText: { color: "#ffffff" },
+    dividerLine: { background: "#71717a" },
+    dividerText: { color: "#ffffff" },
+    formFieldLabel: { color: "#ffffff" },
+    formFieldInput: {
+      background: "#18181b",
+      border: "1px solid #f97316",
+      color: "#ffffff",
+    },
+    formButtonPrimary: {
+      background: "#f97316",
+      color: "#ffffff",
+      boxShadow: "0 4px 24px rgba(194,65,12,0.4)",
+    },
+    footerActionText: { color: "#ffffff" },
+    footerActionLink: { color: "#fb923c" },
+    footer: { color: "#ffffff" },
+    footerPages: { color: "#ffffff" },
+    footerPagesLink: { color: "#ffffff" },
+    badge: { color: "#ffffff", filter: "brightness(2)" },
+    badge__lastUsed: {
+      color: "#f97316",
+      backgroundColor: "rgba(249,115,22,0.1)",
+      borderColor: "rgba(249,115,22,0.3)",
+    },
+    identityPreviewText: { color: "#ffffff" },
+    identityPreviewEditButton: { color: "#fb923c" },
+    alertText: { color: "#ffffff" },
+    formResendCodeLink: { color: "#fb923c" },
+  },
+};
