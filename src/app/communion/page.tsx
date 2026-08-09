@@ -44,20 +44,90 @@ const EMOJIS = [
   "🍕","🎵","🏆","🎨","💻","📱","🌍","🦁","🐉","⚔️",
 ];
 
-function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void }) {
+function EmojiPicker({ onSelect, onGifSelect }: { onSelect: (emoji: string) => void; onGifSelect?: (url: string) => void }) {
+  const [tab, setTab]           = useState<"emoji" | "gif">("emoji");
+  const [gifQuery, setGifQuery] = useState("");
+  const [gifs, setGifs]         = useState<{ id: string; url: string; preview: string }[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== "gif") return;
+    const timer = setTimeout(() => {
+      setGifLoading(true);
+      fetch(gifQuery ? `/api/gifs?q=${encodeURIComponent(gifQuery)}` : "/api/gifs")
+        .then((r) => r.json())
+        .then((data) => {
+          setGifs(
+            (data.results ?? []).map((r: Record<string, unknown>) => {
+              const fmt = r.media_formats as Record<string, { url: string }>;
+              return { id: r.id as string, url: fmt?.gif?.url ?? "", preview: fmt?.tinygif?.url ?? fmt?.gif?.url ?? "" };
+            })
+          );
+          setGifLoading(false);
+        })
+        .catch(() => setGifLoading(false));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [tab, gifQuery]);
+
   return (
     <div className="absolute z-50 bottom-full mb-2 right-0 w-[288px] bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl p-3">
-      <div className="grid grid-cols-10 gap-1">
-        {EMOJIS.map((e) => (
-          <button
-            key={e}
-            onMouseDown={(ev) => { ev.preventDefault(); onSelect(e); }}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-700 text-base transition-all"
-          >
-            {e}
-          </button>
-        ))}
+      {/* Tab switcher */}
+      <div className="flex gap-1.5 mb-2.5">
+        <button
+          onMouseDown={(e) => { e.preventDefault(); setTab("emoji"); }}
+          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${tab === "emoji" ? "bg-orange-500 text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"}`}
+        >Emoji</button>
+        <button
+          onMouseDown={(e) => { e.preventDefault(); setTab("gif"); }}
+          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${tab === "gif" ? "bg-orange-500 text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"}`}
+        >GIF</button>
       </div>
+
+      {tab === "emoji" ? (
+        <div className="grid grid-cols-10 gap-1">
+          {EMOJIS.map((e) => (
+            <button
+              key={e}
+              onMouseDown={(ev) => { ev.preventDefault(); onSelect(e); }}
+              className="w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-700 text-base transition-all"
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div>
+          <input
+            autoFocus
+            value={gifQuery}
+            onChange={(e) => setGifQuery(e.target.value)}
+            placeholder="Search GIFs…"
+            className="w-full px-2 py-1.5 rounded-lg bg-zinc-700 border border-zinc-600 text-xs text-zinc-200 placeholder-zinc-500 outline-none mb-2"
+          />
+          {gifLoading ? (
+            <div className="flex justify-center py-6">
+              <div className="w-4 h-4 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1 max-h-52 overflow-y-auto">
+              {gifs.map((g) => (
+                <button
+                  key={g.id}
+                  onMouseDown={(ev) => { ev.preventDefault(); onGifSelect?.(g.url); }}
+                  className="rounded-md overflow-hidden hover:opacity-75 transition-opacity"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={g.preview} alt="" className="w-full h-20 object-cover" />
+                </button>
+              ))}
+              {gifs.length === 0 && (
+                <p className="col-span-2 text-xs text-zinc-600 text-center py-6">No results</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -126,6 +196,7 @@ export default function CommunionPage() {
   const [onlineUserIds, setOnlineUserIds]     = useState<Set<string>>(new Set());
   const [attachment, setAttachment]           = useState<File | null>(null);
   const [uploadingFile, setUploadingFile]     = useState(false);
+  const [gifUrl, setGifUrl]                   = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -303,13 +374,17 @@ export default function CommunionPage() {
 
   async function sendMessage() {
     const text = input.trim();
-    if (!text && !attachment) return;
+    if (!text && !attachment && !gifUrl) return;
     setInput("");
     setEmojiTarget(null);
 
     let attachmentUrl: string | null = null;
     let attachmentName: string | null = null;
-    if (attachment) {
+    if (gifUrl) {
+      attachmentUrl  = gifUrl;
+      attachmentName = "animated.gif";
+      setGifUrl(null);
+    } else if (attachment) {
       setUploadingFile(true);
       attachmentUrl  = await uploadAttachment(attachment);
       attachmentName = attachment.name;
@@ -790,16 +865,30 @@ export default function CommunionPage() {
               </button>
             </div>
 
-            {/* Attachment preview */}
-            {attachment && (
+            {/* Attachment / GIF preview */}
+            {(attachment || gifUrl) && (
               <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800">
-                <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-xs text-zinc-300">
-                  <Paperclip size={12} className="text-zinc-500" />
-                  <span className="truncate max-w-[180px]">{attachment.name}</span>
-                  <button onMouseDown={(e) => { e.preventDefault(); setAttachment(null); }} className="text-zinc-500 hover:text-zinc-200">
-                    <X size={11} />
-                  </button>
-                </div>
+                {attachment && (
+                  <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-xs text-zinc-300">
+                    <Paperclip size={12} className="text-zinc-500" />
+                    <span className="truncate max-w-[180px]">{attachment.name}</span>
+                    <button onMouseDown={(e) => { e.preventDefault(); setAttachment(null); }} className="text-zinc-500 hover:text-zinc-200">
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+                {gifUrl && (
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={gifUrl} alt="GIF preview" className="h-14 rounded-lg border border-zinc-700 object-cover" />
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); setGifUrl(null); }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-zinc-700 border border-zinc-600 flex items-center justify-center text-zinc-300 hover:text-white"
+                    >
+                      <X size={9} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -844,7 +933,7 @@ export default function CommunionPage() {
                   >
                     <Smile size={15} />
                   </button>
-                  {emojiTarget === "input" && <EmojiPicker onSelect={handleEmojiSelect} />}
+                  {emojiTarget === "input" && <EmojiPicker onSelect={handleEmojiSelect} onGifSelect={(url) => { setGifUrl(url); setEmojiTarget(null); }} />}
                 </div>
                 <button
                   onMouseDown={(e) => { e.preventDefault(); setInput((v) => v + "@"); textareaRef.current?.focus(); }}
@@ -856,7 +945,7 @@ export default function CommunionPage() {
               </div>
               <button
                 onClick={sendMessage}
-                disabled={(!input.trim() && !attachment) || uploadingFile}
+                disabled={(!input.trim() && !attachment && !gifUrl) || uploadingFile}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all"
               >
                 {uploadingFile
