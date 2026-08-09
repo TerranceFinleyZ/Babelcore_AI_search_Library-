@@ -399,7 +399,10 @@ export default function CommunionPage() {
           <Bookmark size={18} />
         </button>
         <div className="flex-1" />
-        <button className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
+        <button
+          onClick={() => setShowSettings(true)}
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-all"
+        >
           <Settings size={18} />
         </button>
         {/* Avatar */}
@@ -894,6 +897,58 @@ export default function CommunionPage() {
             >
               Create Channel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Settings modal ── */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowSettings(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-zinc-100">Admin</h3>
+              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X size={16} /></button>
+            </div>
+            <a
+              href="https://supabase.com/dashboard/org/xqlygtgtiiriwlffwqui"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 hover:border-emerald-500/50 hover:bg-zinc-700 transition-all group"
+            >
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-emerald-400" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-zinc-100 group-hover:text-white">Supabase Dashboard</p>
+                <p className="text-xs text-zinc-500">TerranceFinleyZ&apos;s Org</p>
+              </div>
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* ── Settings / Admin modal ── */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowSettings(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-zinc-100">Admin</h3>
+              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X size={16} /></button>
+            </div>
+            <a
+              href="https://supabase.com/dashboard/org/xqlygtgtiiriwlffwqui"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 hover:border-emerald-500/50 hover:bg-zinc-700 transition-all group"
+            >
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-emerald-400" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-zinc-100 group-hover:text-white">Supabase Dashboard</p>
+                <p className="text-xs text-zinc-500">TerranceFinleyZ&apos;s Org</p>
+              </div>
+            </a>
           </div>
         </div>
       )}
