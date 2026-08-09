@@ -478,7 +478,6 @@ export default function CommunionPage() {
     const { data, error } = await db.from("messages").insert(insertPayload).select("id").single();
 
     if (error || !data?.id) {
-      console.error("[communion] insert failed — code:", error?.code, "| message:", error?.message, "| details:", error?.details, "| hint:", error?.hint, "| data:", data);
       setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, failed: true } : m));
       return;
     }
