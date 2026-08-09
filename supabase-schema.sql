@@ -31,6 +31,11 @@ create table if not exists workspace_users (
 alter table channels        enable row level security;
 alter table workspace_users enable row level security;
 
+drop policy if exists "read channels"    on channels;
+drop policy if exists "create channels"  on channels;
+drop policy if exists "read users"       on workspace_users;
+drop policy if exists "upsert own user"  on workspace_users;
+drop policy if exists "update own user"  on workspace_users;
 create policy "read channels"    on channels        for select using (true);
 create policy "create channels"  on channels        for insert with check (true);
 create policy "read users"       on workspace_users for select using (true);
@@ -62,10 +67,15 @@ create table if not exists reactions (
 alter table messages  enable row level security;
 alter table reactions enable row level security;
 
-create policy "read messages"  on messages  for select using (true);
-create policy "write messages" on messages  for insert with check (true);
-create policy "read reactions" on reactions for select using (true);
-create policy "add reactions"  on reactions for insert with check (true);
+drop policy if exists "read messages"    on messages;
+drop policy if exists "write messages"   on messages;
+drop policy if exists "read reactions"   on reactions;
+drop policy if exists "add reactions"    on reactions;
+drop policy if exists "remove reactions" on reactions;
+create policy "read messages"    on messages  for select using (true);
+create policy "write messages"   on messages  for insert with check (true);
+create policy "read reactions"   on reactions for select using (true);
+create policy "add reactions"    on reactions for insert with check (true);
 create policy "remove reactions" on reactions for delete using (true);
 
 -- ── Attachment columns on messages ────────────────────────
@@ -77,6 +87,8 @@ insert into storage.buckets (id, name, public)
   values ('chat-attachments', 'chat-attachments', true)
   on conflict (id) do nothing;
 
+drop policy if exists "upload attachments" on storage.objects;
+drop policy if exists "read attachments"   on storage.objects;
 create policy "upload attachments" on storage.objects
   for insert with check (bucket_id = 'chat-attachments');
 create policy "read attachments" on storage.objects
