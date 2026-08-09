@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
         .audioCodec("libmp3lame")
         .audioQuality(2) // VBR quality 0 (best) – 9 (worst)
         .on("error", reject)
-        .on("end", resolve)
+        .on("end", () => resolve())
         .save(outputPath);
     });
   } catch (err) {
