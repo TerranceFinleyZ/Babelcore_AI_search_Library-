@@ -252,22 +252,26 @@ export default function CommunionPage() {
         { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${activeChannel}` },
         (payload) => {
           const row = payload.new as Record<string, string>;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id:        row.id,
-              user:      row.user_name,
-              initials:  row.user_initials,
-              color:     row.user_color,
-              imageUrl:  row.user_image_url ?? undefined,
-              time:      new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-              text:           row.text,
-              reactions:      [],
-              attachmentUrl:  row.attachment_url ?? undefined,
-              attachmentName: row.attachment_name ?? undefined,
-              pinned:         false,
-            },
-          ]);
+          setMessages((prev) => {
+            // skip if already added optimistically
+            if (prev.some((m) => m.id === row.id)) return prev;
+            return [
+              ...prev,
+              {
+                id:             row.id,
+                user:           row.user_name,
+                initials:       row.user_initials,
+                color:          row.user_color,
+                imageUrl:       row.user_image_url ?? undefined,
+                time:           new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                text:           row.text,
+                reactions:      [],
+                attachmentUrl:  row.attachment_url ?? undefined,
+                attachmentName: row.attachment_name ?? undefined,
+                pinned:         false,
+              },
+            ];
+          });
         }
       )
       // Reaction added
@@ -421,7 +425,24 @@ export default function CommunionPage() {
       setUploadingFile(false);
     }
 
-    await db.from("messages").insert({
+    // Optimistically show the message immediately
+    const tempId = `temp-${Date.now()}`;
+    const now    = new Date();
+    setMessages((prev) => [...prev, {
+      id:             tempId,
+      user:           myName,
+      initials:       myInitials,
+      color:          "#f97316",
+      imageUrl:       user?.imageUrl ?? undefined,
+      time:           now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      text:           text || "",
+      reactions:      [],
+      attachmentUrl:  attachmentUrl ?? undefined,
+      attachmentName: attachmentName ?? undefined,
+      pinned:         false,
+    }]);
+
+    const { data } = await db.from("messages").insert({
       channel_id:      activeChannel,
       user_id:         myId,
       user_name:       myName,
@@ -431,7 +452,12 @@ export default function CommunionPage() {
       text:            text || "",
       attachment_url:  attachmentUrl,
       attachment_name: attachmentName,
-    });
+    }).select("id").single();
+
+    // Swap temp id for the real DB id so real-time deduplication works
+    if (data?.id) {
+      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: data.id } : m));
+    }
   }
 
   async function toggleReaction(msgId: string, emoji: string) {
