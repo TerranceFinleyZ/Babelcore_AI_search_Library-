@@ -1207,8 +1207,8 @@ export default function CommunionPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-emerald-400" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               </div>
               <div>
-                <p className="text-sm font-semibold text-zinc-100 group-hover:text-white">Supabase Dashboard</p>
-                <p className="text-xs text-zinc-500">TerranceFinleyZ&apos;s Org</p>
+                <p className="text-sm font-semibold text-zinc-100 group-hover:text-white">Supabase</p>
+                <p className="text-xs text-zinc-500">Database &amp; Storage</p>
               </div>
             </a>
           </div>
