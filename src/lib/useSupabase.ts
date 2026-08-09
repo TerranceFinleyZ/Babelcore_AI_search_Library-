@@ -16,7 +16,12 @@ export function useSupabase(): SupabaseClient {
         {
           global: {
             fetch: async (url, options = {}) => {
-              const token = await session?.getToken({ template: "supabase" });
+              let token: string | null = null;
+              try {
+                token = await session?.getToken({ template: "supabase" }) ?? null;
+              } catch {
+                // "supabase" JWT template not configured — fall back to anon key
+              }
               const headers = new Headers((options as RequestInit).headers);
               if (token) headers.set("Authorization", `Bearer ${token}`);
               return fetch(url, { ...(options as RequestInit), headers });
