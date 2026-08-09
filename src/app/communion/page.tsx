@@ -197,6 +197,8 @@ export default function CommunionPage() {
   const [attachment, setAttachment]           = useState<File | null>(null);
   const [uploadingFile, setUploadingFile]     = useState(false);
   const [gifUrl, setGifUrl]                   = useState<string | null>(null);
+  const [showSearch, setShowSearch]           = useState(false);
+  const [searchQuery, setSearchQuery]         = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -356,12 +358,30 @@ export default function CommunionPage() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
+  // Ctrl/Cmd+K opens search
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearch((v) => !v);
+        setSearchQuery("");
+      }
+      if (e.key === "Escape") { setShowSearch(false); setSearchQuery(""); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const isDM = activeChannel.startsWith("dm:");
   const channel = channels.find((c) => c.id === activeChannel);
   const otherUserId = isDM ? activeChannel.split(":").find((id) => id !== "dm" && id !== myId) : undefined;
   const activeDMUser = dmUsers.find((u) => u.id === otherUserId);
   const activeLabel = channel ? `# ${channel.name}` : activeDMUser ? activeDMUser.name : "";
   const currentMessages = messages;
+
+  const q = searchQuery.toLowerCase();
+  const filteredUsers    = dmUsers.filter((u) => u.id !== myId && (!q || u.name.toLowerCase().includes(q)));
+  const filteredChannels = channels.filter((ch) => !q || ch.name.toLowerCase().includes(q));
 
   async function uploadAttachment(file: File): Promise<string | null> {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -511,9 +531,13 @@ export default function CommunionPage() {
 
         {/* Search */}
         <div className="px-3 py-2">
-          <button className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-xs text-zinc-500 hover:bg-zinc-800 transition-all">
+          <button
+            onClick={() => { setShowSearch(true); setSearchQuery(""); }}
+            className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all"
+          >
             <Search size={12} />
             Search Core
+            <kbd className="ml-auto text-[10px] text-zinc-700 bg-zinc-800 border border-zinc-700 rounded px-1">⌘K</kbd>
           </button>
         </div>
 
@@ -987,6 +1011,104 @@ export default function CommunionPage() {
             >
               Create Channel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Search modal ── */}
+      {showSearch && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/70"
+          onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+        >
+          <div
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg mx-4 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Input */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
+              <Search size={16} className="text-zinc-500 shrink-0" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search people and channels…"
+                className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-none"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Results */}
+            <div className="max-h-96 overflow-y-auto p-2">
+              {/* People */}
+              {filteredUsers.length > 0 && (
+                <div className="mb-1">
+                  <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider px-2 py-1.5">People</p>
+                  {filteredUsers.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => { openDM(u); setShowSearch(false); setSearchQuery(""); }}
+                      className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-zinc-800 transition-all text-left"
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: u.color }}>
+                          {u.imageUrl
+                            ? <Image src={u.imageUrl} alt={u.name} width={32} height={32} className="w-full h-full object-cover" />
+                            : u.initials}
+                        </div>
+                        {onlineUserIds.has(u.id) && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-900" style={{ backgroundColor: STATUS_COLOR.online }} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-200 truncate">{u.name}</p>
+                        <p className="text-xs text-zinc-600">{onlineUserIds.has(u.id) ? "Active now" : "Offline"}</p>
+                      </div>
+                      <MessageSquare size={14} className="text-zinc-700 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Channels */}
+              {filteredChannels.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider px-2 py-1.5">Channels</p>
+                  {filteredChannels.map((ch) => (
+                    <button
+                      key={ch.id}
+                      onClick={() => { setActiveChannel(ch.id); setMobileSidebar(false); setShowSearch(false); setSearchQuery(""); }}
+                      className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-zinc-800 transition-all text-left"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
+                        {ch.pinned ? <Lock size={14} className="text-zinc-500" /> : <Hash size={14} className="text-zinc-500" />}
+                      </div>
+                      <div>
+                        <p className="text-sm text-zinc-200"># {ch.name}</p>
+                        {ch.pinned && <p className="text-xs text-zinc-600">Pinned channel</p>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* No results */}
+              {searchQuery && filteredUsers.length === 0 && filteredChannels.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-10 text-zinc-700">
+                  <Search size={28} strokeWidth={1} />
+                  <p className="text-sm mt-2">No results for &ldquo;{searchQuery}&rdquo;</p>
+                </div>
+              )}
+
+              {/* Default empty state */}
+              {!searchQuery && filteredUsers.length === 0 && filteredChannels.length === 0 && (
+                <p className="text-xs text-zinc-700 text-center py-8">No workspace members yet</p>
+              )}
+            </div>
           </div>
         </div>
       )}
