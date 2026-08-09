@@ -31,6 +31,7 @@ import {
   Video,
   Phone,
   X,
+  Trash2,
 } from "lucide-react";
 
 // ── Emoji set ─────────────────────────────────────────────
@@ -43,7 +44,7 @@ const EMOJIS = [
   "🍕","🎵","🏆","🎨","💻","📱","🌍","🦁","🐉","⚔️",
 ];
 
-function EmojiPicker({ onSelect, onGifSelect }: { onSelect: (emoji: string) => void; onGifSelect?: (url: string) => void }) {
+function EmojiPicker({ onSelect, onGifSelect, placement = "above" }: { onSelect: (emoji: string) => void; onGifSelect?: (url: string) => void; placement?: "above" | "below" }) {
   const [tab, setTab]           = useState<"emoji" | "gif">("emoji");
   const [gifQuery, setGifQuery] = useState("");
   const [gifs, setGifs]         = useState<{ id: string; url: string; preview: string }[]>([]);
@@ -70,7 +71,7 @@ function EmojiPicker({ onSelect, onGifSelect }: { onSelect: (emoji: string) => v
   }, [tab, gifQuery]);
 
   return (
-    <div className="absolute z-50 bottom-full mb-2 right-0 w-[288px] bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl p-3">
+    <div className={`absolute z-50 ${placement === "below" ? "top-full mt-2" : "bottom-full mb-2"} right-0 w-[288px] bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl p-3`}>
       {/* Tab switcher */}
       <div className="flex gap-1.5 mb-2.5">
         <button
@@ -143,6 +144,7 @@ type WorkspaceUser = {
 type Reaction = { emoji: string; users: string[] };
 type Message  = {
   id: string;
+  userId: string;
   user: string;
   initials: string;
   color: string;
@@ -200,6 +202,7 @@ export default function CommunionPage() {
   const [showSearch, setShowSearch]           = useState(false);
   const [searchQuery, setSearchQuery]         = useState("");
   const [showPinned, setShowPinned]           = useState(false);
+  const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -225,6 +228,7 @@ export default function CommunionPage() {
     setMessages(
       (msgRows ?? []).map((row) => ({
         id:        row.id,
+        userId:    row.user_id,
         user:      row.user_name,
         initials:  row.user_initials,
         color:     row.user_color,
@@ -259,6 +263,7 @@ export default function CommunionPage() {
               ...prev,
               {
                 id:             row.id,
+                userId:         row.user_id,
                 user:           row.user_name,
                 initials:       row.user_initials,
                 color:          row.user_color,
@@ -391,6 +396,12 @@ export default function CommunionPage() {
   const filteredChannels = channels.filter((ch) => !q || ch.name.toLowerCase().includes(q));
   const pinnedMessages   = currentMessages.filter((m) => m.pinned);
 
+  async function deleteMessage(msgId: string) {
+    setMessageMenuId(null);
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    await db.from("messages").delete().eq("id", msgId);
+  }
+
   async function togglePin(msgId: string, isPinned: boolean) {
     await db.from("messages").update({ pinned: !isPinned }).eq("id", msgId);
     setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, pinned: !isPinned } : m));
@@ -430,6 +441,7 @@ export default function CommunionPage() {
     const now    = new Date();
     setMessages((prev) => [...prev, {
       id:             tempId,
+      userId:         myId,
       user:           myName,
       initials:       myInitials,
       color:          "#f97316",
@@ -881,7 +893,7 @@ export default function CommunionPage() {
                       >
                         <Smile size={13} />
                       </button>
-                      {emojiTarget === `reaction:${msg.id}` && <EmojiPicker onSelect={handleEmojiSelect} />}
+                      {emojiTarget === `reaction:${msg.id}` && <EmojiPicker onSelect={handleEmojiSelect} placement="below" />}
                     </div>
                     <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="Reply in thread">
                       <MessageSquare size={13} />
@@ -893,9 +905,28 @@ export default function CommunionPage() {
                     >
                       <Bookmark size={13} className={msg.pinned ? "fill-orange-400" : ""} />
                     </button>
-                    <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="More">
-                      <MoreHorizontal size={13} />
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setMessageMenuId(messageMenuId === msg.id ? null : msg.id)}
+                        className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all"
+                        title="More"
+                      >
+                        <MoreHorizontal size={13} />
+                      </button>
+                      {messageMenuId === msg.id && (
+                        <div className="absolute right-0 top-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1 min-w-[110px]">
+                          {msg.userId === myId && (
+                            <button
+                              onClick={() => deleteMessage(msg.id)}
+                              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 hover:text-red-300 transition-all"
+                            >
+                              <Trash2 size={12} />
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

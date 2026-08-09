@@ -99,3 +99,6 @@ alter table messages add column if not exists pinned boolean default false;
 
 drop policy if exists "pin messages" on messages;
 create policy "pin messages" on messages for update using (true) with check (true);
+
+drop policy if exists "delete messages" on messages;
+create policy "delete messages" on messages for delete using (true);
