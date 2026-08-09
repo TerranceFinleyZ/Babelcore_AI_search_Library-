@@ -155,6 +155,7 @@ type Message  = {
   attachmentUrl?: string;
   attachmentName?: string;
   pinned: boolean;
+  failed?: boolean;
 };
 
 // Group flat reaction rows into per-emoji user arrays
@@ -458,24 +459,32 @@ export default function CommunionPage() {
       attachmentUrl:  attachmentUrl ?? undefined,
       attachmentName: attachmentName ?? undefined,
       pinned:         false,
+      failed:         false,
     }]);
 
-    const { data } = await db.from("messages").insert({
-      channel_id:      activeChannel,
-      user_id:         myId,
-      user_name:       myName,
-      user_initials:   myInitials,
-      user_color:      "#f97316",
-      user_image_url:  user?.imageUrl ?? null,
-      text:            text || "",
-      attachment_url:  attachmentUrl,
-      attachment_name: attachmentName,
-    }).select("id").single();
+    // Only include optional columns if they have values — avoids failures if schema hasn't been updated
+    const insertPayload: Record<string, unknown> = {
+      channel_id:     activeChannel,
+      user_id:        myId,
+      user_name:      myName,
+      user_initials:  myInitials,
+      user_color:     "#f97316",
+      user_image_url: user?.imageUrl ?? null,
+      text:           text || "",
+    };
+    if (attachmentUrl)  insertPayload.attachment_url  = attachmentUrl;
+    if (attachmentName) insertPayload.attachment_name = attachmentName;
+
+    const { data, error } = await db.from("messages").insert(insertPayload).select("id").single();
+
+    if (error || !data?.id) {
+      // Mark optimistic message as failed so the user knows it didn't save
+      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, failed: true } : m));
+      return;
+    }
 
     // Swap temp id for the real DB id so real-time deduplication works
-    if (data?.id) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: data.id } : m));
-    }
+    setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: data.id } : m));
   }
 
   async function toggleReaction(msgId: string, emoji: string) {
@@ -854,6 +863,17 @@ export default function CommunionPage() {
                       </div>
                     )}
                     {msg.text && <p className="text-sm text-zinc-300 leading-relaxed">{msg.text}</p>}
+                    {msg.failed && (
+                      <p className="text-xs text-red-400 mt-1 flex items-center gap-2">
+                        Failed to save
+                        <button
+                          onClick={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
+                          className="underline hover:text-red-300 transition-colors"
+                        >
+                          Dismiss
+                        </button>
+                      </p>
+                    )}
                     {msg.attachmentUrl && (
                       <div className="mt-1.5">
                         {/\.(jpe?g|png|gif|webp)$/i.test(msg.attachmentName ?? "") ? (
