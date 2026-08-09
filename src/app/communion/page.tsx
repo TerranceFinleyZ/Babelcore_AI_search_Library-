@@ -603,7 +603,10 @@ export default function CommunionPage() {
             {WORKSPACE.name}
             <ChevronDown size={14} className="text-zinc-500" />
           </button>
-          <button className="w-7 h-7 rounded-lg flex items-center justify-center bg-orange-500/20 border border-orange-500/30 text-orange-400 hover:bg-orange-500/30 transition-all">
+          <a href="/bench" className="md:hidden w-7 h-7 rounded-lg flex items-center justify-center bg-orange-500/20 border border-orange-500/30 text-orange-400 hover:bg-orange-500/30 transition-all">
+            <Zap size={14} />
+          </a>
+          <button className="hidden md:flex w-7 h-7 rounded-lg items-center justify-center bg-orange-500/20 border border-orange-500/30 text-orange-400 hover:bg-orange-500/30 transition-all">
             <Zap size={14} />
           </button>
         </div>
