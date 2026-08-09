@@ -205,7 +205,8 @@ export default function CommunionPage() {
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const messagesEndRef  = useRef<HTMLDivElement>(null);
 
   const myId       = user?.id ?? "anon";
   const myName     = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
@@ -370,6 +371,11 @@ export default function CommunionPage() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
+  // Scroll to bottom whenever messages update
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   // Ctrl/Cmd+K opens search
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -476,6 +482,24 @@ export default function CommunionPage() {
     setEmojiTarget(null);
     const msg = messages.find((m) => m.id === msgId);
     const alreadyReacted = msg?.reactions.find((r) => r.emoji === emoji)?.users.includes(myId);
+    // Cap at 15 unique emoji types per message
+    if (!alreadyReacted && (msg?.reactions.length ?? 0) >= 15) return;
+    // Optimistic update
+    setMessages((prev) => prev.map((m) => {
+      if (m.id !== msgId) return m;
+      const ex = m.reactions.find((r) => r.emoji === emoji);
+      let reactions: typeof m.reactions;
+      if (alreadyReacted) {
+        reactions = m.reactions
+          .map((r) => r.emoji === emoji ? { ...r, users: r.users.filter((u) => u !== myId) } : r)
+          .filter((r) => r.users.length > 0);
+      } else {
+        reactions = ex
+          ? m.reactions.map((r) => r.emoji === emoji ? { ...r, users: [...r.users, myId] } : r)
+          : [...m.reactions, { emoji, users: [myId] }];
+      }
+      return { ...m, reactions };
+    }));
     if (alreadyReacted) {
       await db.from("reactions").delete()
         .eq("message_id", msgId).eq("user_id", myId).eq("emoji", emoji);
@@ -932,6 +956,7 @@ export default function CommunionPage() {
               );
             })
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Message input */}
