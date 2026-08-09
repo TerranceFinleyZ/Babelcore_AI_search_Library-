@@ -93,3 +93,9 @@ create policy "upload attachments" on storage.objects
   for insert with check (bucket_id = 'chat-attachments');
 create policy "read attachments" on storage.objects
   for select using (bucket_id = 'chat-attachments');
+
+-- ── Pin support ──────────────────────────────────────
+alter table messages add column if not exists pinned boolean default false;
+
+drop policy if exists "pin messages" on messages;
+create policy "pin messages" on messages for update using (true) with check (true);

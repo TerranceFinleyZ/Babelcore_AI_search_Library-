@@ -18,6 +18,7 @@ export type DbMessage = {
   created_at: string;
   attachment_url: string | null;
   attachment_name: string | null;
+  pinned: boolean;
 };
 
 export type DbReaction = {

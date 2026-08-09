@@ -12,7 +12,6 @@ import {
   Plus,
   Search,
   Bell,
-  HelpCircle,
   ChevronDown,
   ChevronRight,
   Smile,
@@ -153,6 +152,7 @@ type Message  = {
   reactions: Reaction[];
   attachmentUrl?: string;
   attachmentName?: string;
+  pinned: boolean;
 };
 
 // Group flat reaction rows into per-emoji user arrays
@@ -199,6 +199,7 @@ export default function CommunionPage() {
   const [gifUrl, setGifUrl]                   = useState<string | null>(null);
   const [showSearch, setShowSearch]           = useState(false);
   const [searchQuery, setSearchQuery]         = useState("");
+  const [showPinned, setShowPinned]           = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -233,6 +234,7 @@ export default function CommunionPage() {
         reactions:      groupReactions(rxRows ?? [], row.id),
         attachmentUrl:  row.attachment_url ?? undefined,
         attachmentName: row.attachment_name ?? undefined,
+        pinned:         row.pinned ?? false,
       }))
     );
     setLoading(false);
@@ -263,6 +265,7 @@ export default function CommunionPage() {
               reactions:      [],
               attachmentUrl:  row.attachment_url ?? undefined,
               attachmentName: row.attachment_name ?? undefined,
+              pinned:         false,
             },
           ]);
         }
@@ -382,6 +385,12 @@ export default function CommunionPage() {
   const q = searchQuery.toLowerCase();
   const filteredUsers    = dmUsers.filter((u) => u.id !== myId && (!q || u.name.toLowerCase().includes(q)));
   const filteredChannels = channels.filter((ch) => !q || ch.name.toLowerCase().includes(q));
+  const pinnedMessages   = currentMessages.filter((m) => m.pinned);
+
+  async function togglePin(msgId: string, isPinned: boolean) {
+    await db.from("messages").update({ pinned: !isPinned }).eq("id", msgId);
+    setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, pinned: !isPinned } : m));
+  }
 
   async function uploadAttachment(file: File): Promise<string | null> {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -698,9 +707,20 @@ export default function CommunionPage() {
             <button className="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all">
               <Search size={15} />
             </button>
-            <button className="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all">
-              <HelpCircle size={15} />
-            </button>
+            {!isDM && (
+              <button
+                onClick={() => setShowPinned((v) => !v)}
+                className={`relative w-8 h-8 rounded-md flex items-center justify-center transition-all ${showPinned ? "bg-orange-500/15 text-orange-400" : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"}`}
+                title="Pinned messages"
+              >
+                <Bookmark size={15} className={showPinned ? "fill-orange-400" : ""} />
+                {pinnedMessages.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] flex items-center justify-center font-bold">
+                    {pinnedMessages.length}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </header>
 
@@ -840,8 +860,12 @@ export default function CommunionPage() {
                     <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="Reply in thread">
                       <MessageSquare size={13} />
                     </button>
-                    <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="Bookmark">
-                      <Bookmark size={13} />
+                    <button
+                      onClick={() => togglePin(msg.id, msg.pinned)}
+                      className={`w-6 h-6 flex items-center justify-center hover:bg-zinc-700 rounded transition-all ${msg.pinned ? "text-orange-400" : "text-zinc-500 hover:text-zinc-200"}`}
+                      title={msg.pinned ? "Unpin message" : "Pin message"}
+                    >
+                      <Bookmark size={13} className={msg.pinned ? "fill-orange-400" : ""} />
                     </button>
                     <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="More">
                       <MoreHorizontal size={13} />
@@ -983,6 +1007,58 @@ export default function CommunionPage() {
             <strong className="text-zinc-600">Enter</strong> to send · <strong className="text-zinc-600">Shift+Enter</strong> for new line
           </p>
         </div>
+
+        {/* Pinned messages panel */}
+        {showPinned && !isDM && (
+          <div className="absolute inset-y-0 right-0 w-72 bg-zinc-900 border-l border-zinc-800 flex flex-col z-20 shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Bookmark size={14} className="text-orange-400 fill-orange-400" />
+                <span className="text-sm font-bold text-zinc-100">Pinned</span>
+                {pinnedMessages.length > 0 && (
+                  <span className="text-xs text-zinc-600">({pinnedMessages.length})</span>
+                )}
+              </div>
+              <button onClick={() => setShowPinned(false)} className="text-zinc-500 hover:text-zinc-200 transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+              {pinnedMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 text-zinc-700 gap-2 py-12">
+                  <Bookmark size={28} strokeWidth={1} />
+                  <p className="text-xs">No pinned messages yet</p>
+                </div>
+              ) : (
+                pinnedMessages.map((msg) => (
+                  <div key={msg.id} className="p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/60">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="w-5 h-5 rounded-md overflow-hidden flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                        style={{ backgroundColor: msg.color }}>
+                        {msg.imageUrl
+                          ? <Image src={msg.imageUrl} alt={msg.user} width={20} height={20} className="w-full h-full object-cover" />
+                          : msg.initials[0]}
+                      </div>
+                      <span className="text-xs font-semibold text-zinc-200 flex-1 truncate">{msg.user}</span>
+                      <span className="text-[10px] text-zinc-600 shrink-0">{msg.time}</span>
+                    </div>
+                    {msg.text && <p className="text-xs text-zinc-400 leading-relaxed mb-2 line-clamp-3">{msg.text}</p>}
+                    {msg.attachmentUrl && /\.(jpe?g|png|gif|webp)$/i.test(msg.attachmentName ?? "") && (
+                      <Image src={msg.attachmentUrl} alt="attachment" width={200} height={100}
+                        className="rounded-lg object-cover border border-zinc-700 mb-2 w-full" />
+                    )}
+                    <button
+                      onClick={() => togglePin(msg.id, true)}
+                      className="text-[10px] text-zinc-600 hover:text-orange-400 transition-colors"
+                    >
+                      Unpin
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Add Channel modal ── */}
