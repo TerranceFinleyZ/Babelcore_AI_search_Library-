@@ -16,6 +16,8 @@ export type DbMessage = {
   user_image_url: string | null;
   text: string;
   created_at: string;
+  attachment_url: string | null;
+  attachment_name: string | null;
 };
 
 export type DbReaction = {

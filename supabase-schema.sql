@@ -67,3 +67,17 @@ create policy "write messages" on messages  for insert with check (true);
 create policy "read reactions" on reactions for select using (true);
 create policy "add reactions"  on reactions for insert with check (true);
 create policy "remove reactions" on reactions for delete using (true);
+
+-- ── Attachment columns on messages ────────────────────────
+alter table messages add column if not exists attachment_url  text;
+alter table messages add column if not exists attachment_name text;
+
+-- ── Storage bucket for chat attachments ───────────────────
+insert into storage.buckets (id, name, public)
+  values ('chat-attachments', 'chat-attachments', true)
+  on conflict (id) do nothing;
+
+create policy "upload attachments" on storage.objects
+  for insert with check (bucket_id = 'chat-attachments');
+create policy "read attachments" on storage.objects
+  for select using (bucket_id = 'chat-attachments');
