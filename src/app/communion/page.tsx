@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
+import { supabase } from "@/lib/supabase";
+import { useSupabase } from "@/lib/useSupabase";
 import {
   Hash,
   Lock,
@@ -22,36 +24,55 @@ import {
   MessageSquare,
   Bookmark,
   MoreHorizontal,
-  ThumbsUp,
   Zap,
   Users,
   Settings,
   Home,
   ArrowLeft,
-  Circle,
   Video,
   Phone,
+  X,
 } from "lucide-react";
 
-// ── Mock data ──────────────────────────────────────────────
-const WORKSPACE = { name: "Babel", initials: "CO" };
-
-const CHANNELS = [
-  { id: "general", name: "general", unread: 3, pinned: false },
-  { id: "goals", name: "goals", unread: 0, pinned: false },
-  { id: "research", name: "research", unread: 1, pinned: false },
-  { id: "prayer", name: "prayer", unread: 7, pinned: false },
-  { id: "announcements", name: "announcements", unread: 0, pinned: true },
+// ── Emoji set ─────────────────────────────────────────────
+const EMOJIS = [
+  "😀","😂","😍","🥰","😎","🤔","😢","😡","🙏","👍",
+  "👎","👏","🔥","❤️","💯","✅","🎉","🚀","⭐","💡",
+  "😊","🤣","😭","🥹","😅","🫡","🤯","🥳","😴","🤗",
+  "👋","✌️","🤝","💪","🙌","👀","🫶","❤️\u200d🔥","💔","🫠",
+  "📚","📌","⚡","🌟","🎯","🔑","💎","🌙","☀️","🌊",
+  "🍕","🎵","🏆","🎨","💻","📱","🌍","🦁","🐉","⚔️",
 ];
 
-const DMS = [
-  { id: "dm1", name: "Hyrum", status: "online", unread: 2 },
-  { id: "dm2", name: "Elijah", status: "away", unread: 0 },
-  { id: "dm3", name: "Miriam", status: "offline", unread: 0 },
-  { id: "dm4", name: "Samuel", status: "online", unread: 0 },
-];
+function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void }) {
+  return (
+    <div className="absolute z-50 bottom-full mb-2 right-0 w-[288px] bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl p-3">
+      <div className="grid grid-cols-10 gap-1">
+        {EMOJIS.map((e) => (
+          <button
+            key={e}
+            onMouseDown={(ev) => { ev.preventDefault(); onSelect(e); }}
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-700 text-base transition-all"
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-type Message = {
+// ── Static config ──────────────────────────────────────────
+const WORKSPACE = { name: "Babel" };
+
+type Channel       = { id: string; name: string; pinned: boolean };
+type WorkspaceUser = {
+  id: string; name: string; initials: string;
+  imageUrl?: string; color: string; lastSeen: string;
+};
+
+type Reaction = { emoji: string; users: string[] };
+type Message  = {
   id: string;
   user: string;
   initials: string;
@@ -59,88 +80,20 @@ type Message = {
   imageUrl?: string;
   time: string;
   text: string;
-  reactions?: { emoji: string; count: number }[];
-  thread?: number;
+  reactions: Reaction[];
 };
 
-const MESSAGES: Record<string, Message[]> = {
-  general: [
-    {
-      id: "1", user: "Hyrum", initials: "HY", color: "#f97316", time: "9:04 AM",
-      text: "Good morning everyone! 🌅 Starting the day with gratitude.",
-      reactions: [{ emoji: "🙏", count: 4 }, { emoji: "🔥", count: 2 }],
-      thread: 3,
-    },
-    {
-      id: "2", user: "Miriam", initials: "MI", color: "#a78bfa", time: "9:12 AM",
-      text: "Morning! Quick reminder — team sync is at 11 AM today.",
-      reactions: [{ emoji: "👍", count: 5 }],
-    },
-    {
-      id: "3", user: "Elijah", initials: "EL", color: "#34d399", time: "9:18 AM",
-      text: "Got it. I'll have the research notes ready before then.",
-    },
-    {
-      id: "4", user: "Samuel", initials: "SA", color: "#60a5fa", time: "9:31 AM",
-      text: "The new Core Canvas feature looks amazing btw. Great work on the node graph 🎉",
-      reactions: [{ emoji: "🎉", count: 6 }, { emoji: "💯", count: 3 }],
-      thread: 7,
-    },
-    {
-      id: "5", user: "Hyrum", initials: "HY", color: "#f97316", time: "9:45 AM",
-      text: "Thank you! Still polishing the edge handles. Next up is adding a minimap zoom.",
-    },
-    {
-      id: "6", user: "Miriam", initials: "MI", color: "#a78bfa", time: "10:02 AM",
-      text: "Can we add a dark-mode toggle for the canvas too? Some of us prefer a lighter background for the flow diagrams.",
-      reactions: [{ emoji: "💡", count: 2 }],
-    },
-    {
-      id: "7", user: "Elijah", initials: "EL", color: "#34d399", time: "10:15 AM",
-      text: "Just pushed the Q3 research notes to the Library panel. All tagged and indexed 📚",
-      reactions: [{ emoji: "👀", count: 3 }],
-      thread: 2,
-    },
-  ],
-  prayer: [
-    {
-      id: "p1", user: "Samuel", initials: "SA", color: "#60a5fa", time: "7:00 AM",
-      text: "Morning prayer 🙏  — Lord, guide our steps today. May our work reflect your wisdom.",
-      reactions: [{ emoji: "🙏", count: 8 }, { emoji: "❤️", count: 5 }],
-    },
-    {
-      id: "p2", user: "Miriam", initials: "MI", color: "#a78bfa", time: "7:14 AM",
-      text: "Amen. Romans 8:28 — all things work together for good.",
-      reactions: [{ emoji: "🙏", count: 6 }],
-    },
-  ],
-  goals: [
-    {
-      id: "g1", user: "Hyrum", initials: "HY", color: "#f97316", time: "Yesterday",
-      text: "Goals for this week: ✅ Finish Canvas node graph  ⬜ Launch Bible search  ⬜ Newsletter v2",
-    },
-    {
-      id: "g2", user: "Elijah", initials: "EL", color: "#34d399", time: "Yesterday",
-      text: "I'm taking the newsletter. Will have a draft by Thursday.",
-      reactions: [{ emoji: "💪", count: 3 }],
-    },
-  ],
-  research: [
-    {
-      id: "r1", user: "Elijah", initials: "EL", color: "#34d399", time: "Mon",
-      text: "Dropped the Q3 ethics summary in the Library. Key finding: users want offline Bible access.",
-      reactions: [{ emoji: "📌", count: 2 }],
-      thread: 4,
-    },
-  ],
-  announcements: [
-    {
-      id: "a1", user: "Hyrum", initials: "HY", color: "#f97316", time: "Last week",
-      text: "🎉 Core v2.0 is live! New workspace canvas, improved AI chat, and real-time stock panel. Thank you all for your hard work.",
-      reactions: [{ emoji: "🎉", count: 12 }, { emoji: "🔥", count: 8 }, { emoji: "🙏", count: 6 }],
-    },
-  ],
-};
+// Group flat reaction rows into per-emoji user arrays
+function groupReactions(
+  rows: { message_id: string; user_id: string; emoji: string }[],
+  msgId: string,
+): Reaction[] {
+  const map: Record<string, string[]> = {};
+  for (const r of rows.filter((r) => r.message_id === msgId)) {
+    (map[r.emoji] ??= []).push(r.user_id);
+  }
+  return Object.entries(map).map(([emoji, users]) => ({ emoji, users }));
+}
 
 const STATUS_COLOR: Record<string, string> = {
   online: "#22c55e",
@@ -151,38 +104,230 @@ const STATUS_COLOR: Record<string, string> = {
 // ── Component ──────────────────────────────────────────────
 export default function CommunionPage() {
   const { user } = useUser();
-  const [activeChannel, setActiveChannel] = useState("general");
-  const [channelsOpen, setChannelsOpen] = useState(true);
-  const [dmsOpen, setDmsOpen] = useState(true);
-  const [input, setInput] = useState("");
-  // mobile: start on sidebar, navigate to chat on channel select
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(true);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(MESSAGES);
+  const db = useSupabase();
 
-  const isDM = DMS.some((d) => d.id === activeChannel);
-  const channel = CHANNELS.find((c) => c.id === activeChannel);
-  const dm = DMS.find((d) => d.id === activeChannel);
-  const activeLabel = channel ? `# ${channel.name}` : dm ? dm.name : "";
-  const currentMessages = messages[activeChannel] ?? [];
+  const [activeChannel, setActiveChannel]     = useState("general");
+  const [channelsOpen, setChannelsOpen]       = useState(true);
+  const [dmsOpen, setDmsOpen]                 = useState(true);
+  const [input, setInput]                     = useState("");
+  const [mobileSidebarOpen, setMobileSidebar] = useState(true);
+  const [messages, setMessages]               = useState<Message[]>([]);
+  const [loading, setLoading]                 = useState(false);
+  const [emojiTarget, setEmojiTarget]         = useState<string | null>(null);
+  const [channels, setChannels]               = useState<Channel[]>([]);
+  const [dmUsers, setDmUsers]                 = useState<WorkspaceUser[]>([]);
+  const [openDMs, setOpenDMs]                 = useState<string[]>([]);
+  const [showNewChannel, setShowNewChannel]   = useState(false);
+  const [showNewDM, setShowNewDM]             = useState(false);
+  const [newChannelName, setNewChannelName]   = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef   = useRef<HTMLDivElement>(null);
 
-  function sendMessage() {
+  const myId       = user?.id ?? "anon";
+  const myName     = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
+  const myInitials = [user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "YO";
+
+  // Fetch messages + reactions for active channel from Supabase
+  const loadMessages = useCallback(async (channelId: string) => {
+    setLoading(true);
+    const { data: msgRows } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: true });
+
+    const ids = (msgRows ?? []).map((m) => m.id);
+    const { data: rxRows } = ids.length
+      ? await supabase.from("reactions").select("*").in("message_id", ids)
+      : { data: [] };
+
+    setMessages(
+      (msgRows ?? []).map((row) => ({
+        id:        row.id,
+        user:      row.user_name,
+        initials:  row.user_initials,
+        color:     row.user_color,
+        imageUrl:  row.user_image_url ?? undefined,
+        time:      new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        text:      row.text,
+        reactions: groupReactions(rxRows ?? [], row.id),
+      }))
+    );
+    setLoading(false);
+  }, []);
+
+  // Load messages + subscribe to real-time changes when channel switches
+  useEffect(() => {
+    if (!activeChannel) return;
+    loadMessages(activeChannel);
+
+    const channel = supabase
+      .channel(`room:${activeChannel}`)
+      // New message in this channel
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${activeChannel}` },
+        (payload) => {
+          const row = payload.new as Record<string, string>;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id:        row.id,
+              user:      row.user_name,
+              initials:  row.user_initials,
+              color:     row.user_color,
+              imageUrl:  row.user_image_url ?? undefined,
+              time:      new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              text:      row.text,
+              reactions: [],
+            },
+          ]);
+        }
+      )
+      // Reaction added
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "reactions" },
+        (payload) => {
+          const r = payload.new as { message_id: string; user_id: string; emoji: string };
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== r.message_id) return m;
+              const ex = m.reactions.find((rx) => rx.emoji === r.emoji);
+              const reactions = ex
+                ? m.reactions.map((rx) => rx.emoji === r.emoji ? { ...rx, users: [...rx.users, r.user_id] } : rx)
+                : [...m.reactions, { emoji: r.emoji, users: [r.user_id] }];
+              return { ...m, reactions };
+            })
+          );
+        }
+      )
+      // Reaction removed
+      .on("postgres_changes",
+        { event: "DELETE", schema: "public", table: "reactions" },
+        (payload) => {
+          const r = payload.old as { message_id: string; user_id: string; emoji: string };
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== r.message_id) return m;
+              const reactions = m.reactions
+                .map((rx) => rx.emoji === r.emoji ? { ...rx, users: rx.users.filter((u) => u !== r.user_id) } : rx)
+                .filter((rx) => rx.users.length > 0);
+              return { ...m, reactions };
+            })
+          );
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [activeChannel, loadMessages]);
+
+  // Load channels + subscribe to new ones (C)
+  useEffect(() => {
+    supabase.from("channels").select("*").order("pinned", { ascending: false }).order("name")
+      .then(({ data }) => setChannels(data ?? []));
+    const sub = supabase.channel("channels:global")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "channels" },
+        (p) => setChannels((prev) => [...prev, p.new as Channel]))
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
+  }, []);
+
+  // Upsert self + load all workspace members (B)
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("workspace_users").upsert({
+      id: myId, name: myName, initials: myInitials,
+      image_url: user.imageUrl ?? null, color: "#f97316",
+      last_seen: new Date().toISOString(),
+    });
+    supabase.from("workspace_users").select("*")
+      .then(({ data }) => setDmUsers((data ?? []).map((u) => ({
+        id: u.id, name: u.name, initials: u.initials,
+        imageUrl: u.image_url ?? undefined, color: u.color, lastSeen: u.last_seen,
+      }))));
+  }, [user, myId, myName, myInitials]);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node))
+        setEmojiTarget(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const isDM = activeChannel.startsWith("dm:");
+  const channel = channels.find((c) => c.id === activeChannel);
+  const otherUserId = isDM ? activeChannel.split(":").find((id) => id !== "dm" && id !== myId) : undefined;
+  const activeDMUser = dmUsers.find((u) => u.id === otherUserId);
+  const activeLabel = channel ? `# ${channel.name}` : activeDMUser ? activeDMUser.name : "";
+  const currentMessages = messages;
+
+  async function sendMessage() {
     const text = input.trim();
     if (!text) return;
-    const firstName = user?.firstName ?? "";
-    const lastName = user?.lastName ?? "";
-    const fullName = [firstName, lastName].filter(Boolean).join(" ") || "You";
-    const initials = [firstName[0], lastName[0]].filter(Boolean).join("").toUpperCase() || "YO";
-    const newMsg: Message = {
-      id: Date.now().toString(),
-      user: fullName,
-      initials,
-      color: "#f97316",
-      imageUrl: user?.imageUrl,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      text,
-    };
-    setMessages((prev) => ({ ...prev, [activeChannel]: [...(prev[activeChannel] ?? []), newMsg] }));
     setInput("");
+    setEmojiTarget(null);
+    await db.from("messages").insert({
+      channel_id:     activeChannel,
+      user_id:        myId,
+      user_name:      myName,
+      user_initials:  myInitials,
+      user_color:     "#f97316",
+      user_image_url: user?.imageUrl ?? null,
+      text,
+    });
+  }
+
+  async function toggleReaction(msgId: string, emoji: string) {
+    setEmojiTarget(null);
+    const msg = messages.find((m) => m.id === msgId);
+    const alreadyReacted = msg?.reactions.find((r) => r.emoji === emoji)?.users.includes(myId);
+    if (alreadyReacted) {
+      await db.from("reactions").delete()
+        .eq("message_id", msgId).eq("user_id", myId).eq("emoji", emoji);
+    } else {
+      await db.from("reactions").insert({ message_id: msgId, user_id: myId, emoji });
+    }
+  }
+
+  function handleEmojiSelect(emoji: string) {
+    if (emojiTarget === "input") {
+      setInput((v) => v + emoji);
+      setEmojiTarget(null);
+      textareaRef.current?.focus();
+    } else if (emojiTarget?.startsWith("reaction:")) {
+      toggleReaction(emojiTarget.replace("reaction:", ""), emoji);
+    }
+  }
+
+  async function createChannel() {
+    const name = newChannelName.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!name) return;
+    await db.from("channels").insert({ id: name, name, pinned: false });
+    setActiveChannel(name);
+    setShowNewChannel(false);
+    setNewChannelName("");
+    setMobileSidebar(false);
+  }
+
+  function openDM(other: WorkspaceUser) {
+    const dmId = ["dm", ...[myId, other.id].sort()].join(":");
+    setOpenDMs((prev) => prev.includes(dmId) ? prev : [...prev, dmId]);
+    setActiveChannel(dmId);
+    setShowNewDM(false);
+    setMobileSidebar(false);
+  }
+
+  function formatText(wrap: string) {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    setInput(s === e
+      ? input + wrap + wrap
+      : input.slice(0, s) + wrap + input.slice(s, e) + wrap + input.slice(e));
+    ta.focus();
   }
 
   return (
@@ -223,7 +368,7 @@ export default function CommunionPage() {
 
       {/* ── Left sidebar ────────────────────────────────── */}
       <aside className={`flex-col bg-zinc-900 border-r border-zinc-800 overflow-y-auto z-40
-        ${mobileSidebarOpen ? 'flex absolute inset-0 w-full' : 'hidden'}
+        ${mobileSidebarOpen ? "flex absolute inset-0 w-full" : "hidden"}
         sm:relative sm:flex sm:w-[240px] sm:shrink-0 sm:inset-auto`}>
         {/* Workspace header */}
         <div className="flex items-center justify-between px-3 py-3 border-b border-zinc-800/60">
@@ -274,28 +419,24 @@ export default function CommunionPage() {
 
           {channelsOpen && (
             <div className="mt-0.5 flex flex-col gap-px">
-              {CHANNELS.map((ch) => (
+              {channels.map((ch) => (
                 <button
                   key={ch.id}
-                  onClick={() => { setActiveChannel(ch.id); setMobileSidebarOpen(false); }}
+                  onClick={() => { setActiveChannel(ch.id); setMobileSidebar(false); }}
                   className={`flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs transition-all ${
                     activeChannel === ch.id
                       ? "bg-orange-500/15 text-orange-300"
-                      : ch.unread > 0
-                      ? "text-zinc-100 font-semibold hover:bg-zinc-800"
                       : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                   }`}
                 >
                   {ch.pinned ? <Lock size={12} className="shrink-0 text-zinc-600" /> : <Hash size={12} className="shrink-0" />}
                   <span className="truncate flex-1 text-left">{ch.name}</span>
-                  {ch.unread > 0 && activeChannel !== ch.id && (
-                    <span className="ml-auto w-4 h-4 rounded-full bg-zinc-100 text-zinc-900 text-[10px] font-bold flex items-center justify-center">
-                      {ch.unread}
-                    </span>
-                  )}
                 </button>
               ))}
-              <button className="flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs text-zinc-600 hover:bg-zinc-800 hover:text-zinc-400 transition-all">
+              <button
+                onClick={() => setShowNewChannel(true)}
+                className="flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs text-zinc-600 hover:bg-zinc-800 hover:text-zinc-400 transition-all"
+              >
                 <Plus size={12} />
                 Add channel
               </button>
@@ -317,37 +458,34 @@ export default function CommunionPage() {
 
           {dmsOpen && (
             <div className="mt-0.5 flex flex-col gap-px">
-              {DMS.map((dm) => (
-                <button
-                  key={dm.id}
-                  onClick={() => { setActiveChannel(dm.id); setMobileSidebarOpen(false); }}
-                  className={`flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs transition-all ${
-                    activeChannel === dm.id
-                      ? "bg-orange-500/15 text-orange-300"
-                      : dm.unread > 0
-                      ? "text-zinc-100 font-semibold hover:bg-zinc-800"
-                      : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                  }`}
-                >
-                  <div className="relative shrink-0">
-                    <div className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold text-white"
-                      style={{ backgroundColor: dm.status === "online" ? "#22c55e" : dm.status === "away" ? "#eab308" : "#52525b" }}>
-                      {dm.name[0]}
+              {openDMs.map((dmId) => {
+                const otherId = dmId.split(":").find((id) => id !== "dm" && id !== myId);
+                const other = dmUsers.find((u) => u.id === otherId);
+                if (!other) return null;
+                return (
+                  <button
+                    key={dmId}
+                    onClick={() => { setActiveChannel(dmId); setMobileSidebar(false); }}
+                    className={`flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs transition-all ${
+                      activeChannel === dmId
+                        ? "bg-orange-500/15 text-orange-300"
+                        : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                    }`}
+                  >
+                    <div className="w-5 h-5 rounded-md overflow-hidden flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                      style={{ backgroundColor: other.color }}>
+                      {other.imageUrl
+                        ? <Image src={other.imageUrl} alt={other.name} width={20} height={20} className="w-full h-full object-cover" />
+                        : other.initials[0]}
                     </div>
-                    <span
-                      className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-900"
-                      style={{ backgroundColor: STATUS_COLOR[dm.status] }}
-                    />
-                  </div>
-                  <span className="truncate flex-1 text-left">{dm.name}</span>
-                  {dm.unread > 0 && activeChannel !== dm.id && (
-                    <span className="ml-auto w-4 h-4 rounded-full bg-zinc-100 text-zinc-900 text-[10px] font-bold flex items-center justify-center">
-                      {dm.unread}
-                    </span>
-                  )}
-                </button>
-              ))}
-              <button className="flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs text-zinc-600 hover:bg-zinc-800 hover:text-zinc-400 transition-all">
+                    <span className="truncate flex-1 text-left">{other.name}</span>
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setShowNewDM(true)}
+                className="flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs text-zinc-600 hover:bg-zinc-800 hover:text-zinc-400 transition-all"
+              >
                 <Plus size={12} />
                 New message
               </button>
@@ -359,43 +497,32 @@ export default function CommunionPage() {
       </aside>
 
       {/* ── Main chat area ───────────────────────────────── */}
-      <div className={`flex-col flex-1 min-w-0 overflow-hidden ${mobileSidebarOpen ? 'hidden sm:flex' : 'flex'}`}>
+      <div className={`flex-col flex-1 min-w-0 overflow-hidden ${mobileSidebarOpen ? "hidden sm:flex" : "flex"}`}>
 
         {/* Channel header */}
         <header className="flex items-center justify-between h-12 shrink-0 px-4 bg-zinc-950 border-b border-zinc-800 z-10">
           <div className="flex items-center gap-2">
             {/* back to sidebar on mobile */}
             <button
-              onClick={() => setMobileSidebarOpen(true)}
+              onClick={() => setMobileSidebar(true)}
               className="sm:hidden w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-all -ml-1 mr-1"
             >
               <ArrowLeft size={16} />
             </button>
             {isDM ? (
               <>
-                <div className="relative">
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white bg-green-600">
-                    {dm?.name[0]}
-                  </div>
-                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-950"
-                    style={{ backgroundColor: STATUS_COLOR[dm?.status ?? "offline"] }} />
+                <div className="w-6 h-6 rounded-md overflow-hidden flex items-center justify-center text-[10px] font-bold text-white bg-zinc-700 shrink-0">
+                  {activeDMUser?.imageUrl
+                    ? <Image src={activeDMUser.imageUrl} alt={activeDMUser.name} width={24} height={24} className="w-full h-full object-cover" />
+                    : activeDMUser?.initials[0]}
                 </div>
-                <span className="text-sm font-bold text-zinc-100">{dm?.name}</span>
-                <span className="text-xs text-zinc-600 capitalize">{dm?.status}</span>
+                <span className="text-sm font-bold text-zinc-100">{activeDMUser?.name ?? "Direct Message"}</span>
               </>
             ) : (
               <>
                 <Hash size={16} className="text-zinc-400" />
                 <span className="text-sm font-bold text-zinc-100">{channel?.name}</span>
                 {channel?.pinned && <Lock size={12} className="text-zinc-600" />}
-                <span className="text-zinc-700">·</span>
-                <span className="text-xs text-zinc-500">
-                  {channel?.name === "announcements" ? "Important updates for the team" :
-                   channel?.name === "general" ? "All-team conversation" :
-                   channel?.name === "prayer" ? "Daily prayer and scripture" :
-                   channel?.name === "goals" ? "Weekly goals and accountability" :
-                   "Research and resources"}
-                </span>
               </>
             )}
           </div>
@@ -437,7 +564,11 @@ export default function CommunionPage() {
           )}
 
           {/* Messages list */}
-          {currentMessages.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center flex-1 py-16">
+              <div className="w-5 h-5 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+            </div>
+          ) : currentMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center flex-1 text-zinc-700 gap-2 py-16">
               <MessageSquare size={40} strokeWidth={1} />
               <p className="text-sm">No messages yet. Say something!</p>
@@ -485,36 +616,46 @@ export default function CommunionPage() {
                     <p className="text-sm text-zinc-300 leading-relaxed">{msg.text}</p>
 
                     {/* Reactions */}
-                    {msg.reactions && (
-                      <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {msg.reactions.length > 0 && (
+                      <div className="flex gap-1.5 mt-1.5 flex-wrap items-center">
                         {msg.reactions.map((r) => (
                           <button
                             key={r.emoji}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 hover:border-orange-500/40 hover:bg-zinc-700 text-xs text-zinc-300 transition-all"
+                            onClick={() => toggleReaction(msg.id, r.emoji)}
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-all ${
+                              r.users.includes(myId)
+                                ? "bg-orange-500/20 border-orange-500/50 text-orange-300"
+                                : "bg-zinc-800 border-zinc-700 hover:border-orange-500/40 hover:bg-zinc-700 text-zinc-300"
+                            }`}
                           >
-                            {r.emoji} <span className="text-zinc-500">{r.count}</span>
+                            {r.emoji} <span className="text-zinc-400 ml-0.5">{r.users.length}</span>
                           </button>
                         ))}
-                        <button className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-800/50 border border-zinc-700/50 hover:border-orange-500/30 text-zinc-600 hover:text-zinc-300 transition-all text-xs">
-                          <Smile size={12} />
-                        </button>
+                        <div className="relative" ref={emojiTarget === `reaction:${msg.id}` ? pickerRef : undefined}>
+                          <button
+                            onClick={() => setEmojiTarget(emojiTarget === `reaction:${msg.id}` ? null : `reaction:${msg.id}`)}
+                            className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-800/50 border border-zinc-700/50 hover:border-orange-500/30 text-zinc-600 hover:text-zinc-300 transition-all"
+                          >
+                            <Smile size={12} />
+                          </button>
+                          {emojiTarget === `reaction:${msg.id}` && <EmojiPicker onSelect={handleEmojiSelect} />}
+                        </div>
                       </div>
-                    )}
-
-                    {/* Thread reply count */}
-                    {msg.thread && (
-                      <button className="mt-1.5 flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-300 hover:underline transition-colors">
-                        <MessageSquare size={13} />
-                        {msg.thread} {msg.thread === 1 ? "reply" : "replies"}
-                      </button>
                     )}
                   </div>
 
                   {/* Hover action bar */}
                   <div className="absolute right-2 top-0 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5 bg-zinc-800 border border-zinc-700 rounded-lg px-1 py-0.5 shadow-lg">
-                    <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="React">
-                      <Smile size={13} />
-                    </button>
+                    <div className="relative" ref={emojiTarget === `reaction:${msg.id}` ? pickerRef : undefined}>
+                      <button
+                        onClick={() => setEmojiTarget(emojiTarget === `reaction:${msg.id}` ? null : `reaction:${msg.id}`)}
+                        className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all"
+                        title="React"
+                      >
+                        <Smile size={13} />
+                      </button>
+                      {emojiTarget === `reaction:${msg.id}` && <EmojiPicker onSelect={handleEmojiSelect} />}
+                    </div>
                     <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="Reply in thread">
                       <MessageSquare size={13} />
                     </button>
@@ -536,23 +677,40 @@ export default function CommunionPage() {
           <div className="rounded-xl border border-zinc-700 bg-zinc-900 focus-within:border-zinc-600 transition-colors">
             {/* Formatting toolbar */}
             <div className="flex items-center gap-0.5 px-3 pt-2 pb-1 border-b border-zinc-800">
-              <button className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText("**"); }}
+                className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all"
+                title="Bold"
+              >
                 <Bold size={12} />
               </button>
-              <button className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText("_"); }}
+                className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all"
+                title="Italic"
+              >
                 <Italic size={12} />
               </button>
               <div className="w-px h-3.5 bg-zinc-700 mx-1" />
-              <button className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setInput((v) => v + "@"); textareaRef.current?.focus(); }}
+                className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all"
+                title="Mention"
+              >
                 <AtSign size={12} />
               </button>
-              <button className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setInput((v) => v + "#"); textareaRef.current?.focus(); }}
+                className="w-6 h-6 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-all"
+                title="Channel"
+              >
                 <Hash size={12} />
               </button>
             </div>
 
-            {/* Text area */}
+            {/* Textarea */}
             <textarea
+              ref={textareaRef}
               rows={2}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -569,13 +727,24 @@ export default function CommunionPage() {
             {/* Bottom toolbar */}
             <div className="flex items-center justify-between px-3 pb-2 pt-1">
               <div className="flex items-center gap-0.5">
-                <button className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all">
+                <button className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all" title="Attach">
                   <Paperclip size={15} />
                 </button>
-                <button className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all">
-                  <Smile size={15} />
-                </button>
-                <button className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all">
+                <div className="relative" ref={emojiTarget === "input" ? pickerRef : undefined}>
+                  <button
+                    onClick={() => setEmojiTarget(emojiTarget === "input" ? null : "input")}
+                    className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all"
+                    title="Emoji"
+                  >
+                    <Smile size={15} />
+                  </button>
+                  {emojiTarget === "input" && <EmojiPicker onSelect={handleEmojiSelect} />}
+                </div>
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setInput((v) => v + "@"); textareaRef.current?.focus(); }}
+                  className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all"
+                  title="Mention"
+                >
                   <AtSign size={15} />
                 </button>
               </div>
@@ -594,6 +763,69 @@ export default function CommunionPage() {
           </p>
         </div>
       </div>
+
+      {/* ── Add Channel modal ── */}
+      {showNewChannel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowNewChannel(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-zinc-100">Add a channel</h3>
+              <button onClick={() => setShowNewChannel(false)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X size={16} /></button>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 mb-4">
+              <Hash size={14} className="text-zinc-500" />
+              <input
+                autoFocus
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && createChannel()}
+                placeholder="channel-name"
+                className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-none"
+              />
+            </div>
+            <button
+              onClick={createChannel}
+              disabled={!newChannelName.trim()}
+              className="w-full py-2 rounded-lg bg-orange-500 hover:bg-orange-400 disabled:opacity-30 text-white text-sm font-semibold transition-all"
+            >
+              Create Channel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── New DM modal ── */}
+      {showNewDM && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowNewDM(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-zinc-100">New Message</h3>
+              <button onClick={() => setShowNewDM(false)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X size={16} /></button>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">Select a workspace member to message</p>
+            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+              {dmUsers.filter((u) => u.id !== myId).map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => openDM(u)}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-zinc-800 transition-all text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center text-xs font-bold text-white shrink-0"
+                    style={{ backgroundColor: u.color }}>
+                    {u.imageUrl
+                      ? <Image src={u.imageUrl} alt={u.name} width={32} height={32} className="w-full h-full object-cover" />
+                      : u.initials}
+                  </div>
+                  <span className="text-sm text-zinc-200">{u.name}</span>
+                </button>
+              ))}
+              {dmUsers.filter((u) => u.id !== myId).length === 0 && (
+                <p className="text-xs text-zinc-600 text-center py-6">No other members have joined yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
