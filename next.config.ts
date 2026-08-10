@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  distDir: "out",
   serverExternalPackages: ["oracledb", "ffmpeg-static", "fluent-ffmpeg"],
   images: {
     remotePatterns: [

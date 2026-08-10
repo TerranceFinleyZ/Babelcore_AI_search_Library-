@@ -299,7 +299,7 @@ export default function BenchPage() {
     const data = new Uint8Array(analyser.frequencyBinCount);
     const bins = [2, 6, 12, 20];
     function loop() {
-      analyser.getByteFrequencyData(data);
+      analyser!.getByteFrequencyData(data);
       setBarHeights(bins.map((i) => Math.max(3, (data[i] / 255) * 16)));
       rafRef.current = requestAnimationFrame(loop);
     }
@@ -672,7 +672,7 @@ export default function BenchPage() {
                   <Link key={item.label} href={item.href}>{content}</Link>
                 )
               ) : (
-                <div key={item.label} onClick={() => setActiveSidebarItem((prev) => prev === item.label ? null : item.label)}>{content}</div>
+                <div key={item.label} onClick={() => setActiveSidebarItem((prev) => prev === item.label ? null : (item.label ?? null))}>{content}</div>
               );
             })}
           </div>

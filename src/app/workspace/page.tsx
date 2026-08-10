@@ -22,6 +22,7 @@ import {
   type Connection,
   getNodesBounds,
   getViewportForBounds,
+  ConnectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toPng } from "html-to-image";
@@ -566,7 +567,7 @@ function WorkspaceCanvas({
         onDrop={onDrop}
         onDragOver={onDragOver}
         onConnect={onConnect}
-        connectionMode="loose"
+        connectionMode={ConnectionMode.Loose}
         defaultEdgeOptions={{
           style: { stroke: "rgba(255,255,255,0.65)", strokeWidth: 1.5 },
           markerEnd: { type: MarkerType.ArrowClosed, color: "rgba(255,255,255,0.65)", width: 12, height: 12 },

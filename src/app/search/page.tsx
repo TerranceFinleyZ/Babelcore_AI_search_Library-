@@ -249,7 +249,7 @@ export default function SearchPage() {
                   </div>
                 )}
               </div>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </div>
           </div>
 
