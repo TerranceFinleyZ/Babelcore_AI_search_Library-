@@ -24,6 +24,24 @@ services:
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
         scope: RUN_AND_BUILD_TIME
         type: SECRET
+      - key: GROQ_API_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: GROQ_MODEL
+        scope: RUN_AND_BUILD_TIME
+        value: llama-3.1-8b-instant
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+        scope: RUN_AND_BUILD_TIME
+        value: /sign-in
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_URL
+        scope: RUN_AND_BUILD_TIME
+        value: /sign-up
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL
+        scope: RUN_AND_BUILD_TIME
+        value: /search
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
+        scope: RUN_AND_BUILD_TIME
+        value: /search
 domains:
   - domain: babelcore.net
     type: PRIMARY
