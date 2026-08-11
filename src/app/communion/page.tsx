@@ -211,7 +211,7 @@ export default function CommunionPage() {
   const [reportStatus, setReportStatus]       = useState<"idle" | "loading" | "done" | "error">("idle");
   const [picModalOpen, setPicModalOpen]       = useState(false);
   const [customPic, setCustomPic]             = useState<string | null>(null);
-  const [avatarPopup, setAvatarPopup]         = useState<{ user: WorkspaceUser; x: number; y: number } | null>(null);
+  const [avatarPopup, setAvatarPopup]         = useState<{ user: WorkspaceUser; x: number; y: number; msgId: string; msgPinned: boolean } | null>(null);
 
   useEffect(() => {
     try {
@@ -868,6 +868,8 @@ export default function CommunionPage() {
                               user: { id: msg.userId, name: msg.user, initials: msg.initials, imageUrl: msg.imageUrl, color: msg.color, lastSeen: "" },
                               x: e.clientX,
                               y: e.clientY,
+                              msgId: msg.id,
+                              msgPinned: msg.pinned,
                             });
                           }
                         }}
@@ -1371,7 +1373,7 @@ export default function CommunionPage() {
             className="absolute bg-zinc-900 border border-zinc-700 rounded-2xl p-4 w-52 shadow-2xl"
             style={{
               left: Math.min(avatarPopup.x, (typeof window !== "undefined" ? window.innerWidth : 800) - 220),
-              top:  Math.min(avatarPopup.y, (typeof window !== "undefined" ? window.innerHeight : 600) - 140),
+              top:  Math.min(avatarPopup.y, (typeof window !== "undefined" ? window.innerHeight : 600) - 220),
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1391,6 +1393,33 @@ export default function CommunionPage() {
               <MessageSquare size={14} />
               Send DM
             </button>
+
+            {/* Mobile-only message actions */}
+            <div className="sm:hidden mt-3 pt-3 border-t border-zinc-700/60 flex flex-col gap-1">
+              <button
+                onClick={() => setAvatarPopup(null)}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-zinc-300 hover:bg-zinc-800 transition-all"
+              >
+                <MessageSquare size={13} />
+                Reply in thread
+              </button>
+              <button
+                onClick={() => { togglePin(avatarPopup.msgId, avatarPopup.msgPinned); setAvatarPopup(null); }}
+                className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm hover:bg-zinc-800 transition-all ${
+                  avatarPopup.msgPinned ? "text-orange-400" : "text-zinc-300"
+                }`}
+              >
+                <Bookmark size={13} className={avatarPopup.msgPinned ? "fill-orange-400" : ""} />
+                {avatarPopup.msgPinned ? "Unpin message" : "Pin message"}
+              </button>
+              <button
+                onClick={() => { setReportMsgId(avatarPopup.msgId); setReportCategory("other"); setReportDesc(""); setReportStatus("idle"); setAvatarPopup(null); }}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-orange-400 hover:bg-zinc-800 transition-all"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                Report
+              </button>
+            </div>
           </div>
         </div>
       )}
