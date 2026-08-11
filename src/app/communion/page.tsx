@@ -206,9 +206,14 @@ export default function CommunionPage() {
   const [showPinned, setShowPinned]           = useState(false);
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
   const [picModalOpen, setPicModalOpen]       = useState(false);
-  const [customPic, setCustomPic]             = useState<string | null>(() => {
-    try { return localStorage.getItem(PROFILE_PIC_KEY); } catch { return null; }
-  });
+  const [customPic, setCustomPic]             = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(PROFILE_PIC_KEY);
+      if (stored) setCustomPic(stored);
+    } catch { /* noop */ }
+  }, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);

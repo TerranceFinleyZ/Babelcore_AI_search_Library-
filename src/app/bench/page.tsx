@@ -192,9 +192,14 @@ export default function BenchPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [clipbunModalOpen, setClipbunModalOpen] = useState(false);
   const [picModalOpen, setPicModalOpen] = useState(false);
-  const [customPic, setCustomPic] = useState<string | null>(() => {
-    try { return localStorage.getItem(PROFILE_PIC_KEY); } catch { return null; }
-  });
+  const [customPic, setCustomPic] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(PROFILE_PIC_KEY);
+      if (stored) setCustomPic(stored);
+    } catch { /* noop */ }
+  }, []);
   const [notesVisible, setNotesVisible] = useState(false);
   const [notesText, setNotesText] = useState("");
   const [notesSaveStatus, setNotesSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
