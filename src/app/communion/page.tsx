@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase";
 import { useSupabase } from "@/lib/useSupabase";
-import ProfilePicModal, { PROFILE_PIC_KEY } from "@/components/ProfilePicModal";
+import ProfilePicModal, { PROFILE_PIC_KEY, AvatarDisplay } from "@/components/ProfilePicModal";
 import {
   Hash,
   Lock,
@@ -599,20 +599,12 @@ export default function CommunionPage() {
         {/* Avatar */}
         <div className="relative" onClick={() => setPicModalOpen(true)}>
           <div className="w-8 h-8 rounded-lg overflow-hidden bg-orange-500 flex items-center justify-center text-white text-xs font-bold cursor-pointer">
-            {customPic ? (
-              customPic.startsWith("data:") ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={customPic} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white text-xs font-bold" style={{ background: customPic }}>
-                  {user?.firstName?.[0] ?? "Y"}
-                </div>
-              )
-            ) : user?.imageUrl ? (
-              <Image src={user.imageUrl} alt="Profile" width={32} height={32} className="w-full h-full object-cover" />
-            ) : (
-              user?.firstName?.[0] ?? "Y"
-            )}
+            <AvatarDisplay
+              pic={customPic}
+              fallbackUrl={user?.imageUrl}
+              initial={user?.firstName?.[0] ?? "Y"}
+              className="w-full h-full"
+            />
           </div>
           <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 border-2 border-zinc-900" />
         </div>
@@ -879,21 +871,7 @@ export default function CommunionPage() {
                         {(() => {
                           // always reflect the latest pic for own messages
                           const pic = msg.userId === myId ? (customPic || msg.imageUrl) : msg.imageUrl;
-                          return pic?.includes("gradient") ? (
-                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white" style={{ background: pic }}>
-                              {msg.initials[0]}
-                            </div>
-                          ) : pic ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={pic} alt={msg.user} className="w-9 h-9 rounded-xl object-cover" />
-                          ) : (
-                            <div
-                              className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
-                              style={{ backgroundColor: msg.color }}
-                            >
-                              {msg.initials}
-                            </div>
-                          );
+                          return <AvatarDisplay pic={pic ?? null} initial={msg.initials[0]} color={msg.color} className="w-9 h-9 rounded-xl" />;
                         })()}
                       </div>
                     )}
@@ -1180,13 +1158,12 @@ export default function CommunionPage() {
                 pinnedMessages.map((msg) => (
                   <div key={msg.id} className="p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/60">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <div className="w-5 h-5 rounded-md overflow-hidden flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-                        style={{ backgroundColor: msg.imageUrl?.includes("gradient") ? undefined : msg.color, background: msg.imageUrl?.includes("gradient") ? msg.imageUrl : undefined }}>
-                        {msg.imageUrl && !msg.imageUrl.includes("gradient")
-                          // eslint-disable-next-line @next/next/no-img-element
-                          ? <img src={msg.imageUrl} alt={msg.user} className="w-full h-full object-cover" />
-                          : msg.initials[0]}
-                      </div>
+                      <AvatarDisplay
+                        pic={msg.userId === myId ? (customPic || msg.imageUrl || null) : (msg.imageUrl || null)}
+                        initial={msg.initials[0]}
+                        color={msg.color}
+                        className="w-5 h-5 rounded-md shrink-0 text-[9px]"
+                      />
                       <span className="text-xs font-semibold text-zinc-200 flex-1 truncate">{msg.user}</span>
                       <span className="text-[10px] text-zinc-600 shrink-0">{msg.time}</span>
                     </div>
@@ -1386,18 +1363,12 @@ export default function CommunionPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
-              {avatarPopup.user.imageUrl?.includes("gradient") ? (
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ background: avatarPopup.user.imageUrl }}>
-                  {avatarPopup.user.initials[0]}
-                </div>
-              ) : avatarPopup.user.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarPopup.user.imageUrl} alt={avatarPopup.user.name} className="w-10 h-10 rounded-xl object-cover shrink-0" />
-              ) : (
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ backgroundColor: avatarPopup.user.color }}>
-                  {avatarPopup.user.initials}
-                </div>
-              )}
+              <AvatarDisplay
+                pic={avatarPopup.user.imageUrl ?? null}
+                initial={avatarPopup.user.initials[0]}
+                color={avatarPopup.user.color}
+                className="w-10 h-10 rounded-xl shrink-0"
+              />
               <p className="text-sm font-bold text-zinc-100 truncate">{avatarPopup.user.name}</p>
             </div>
             <button

@@ -7,7 +7,7 @@ import { useClerk, useUser } from "@clerk/nextjs";
 import LibraryPanel from "@/components/LibraryPanel";
 import NewsPanel from "@/components/NewsPanel";
 import CareersPanel from "@/components/CareersPanel";
-import ProfilePicModal, { PROFILE_PIC_KEY } from "@/components/ProfilePicModal";
+import ProfilePicModal, { PROFILE_PIC_KEY, AvatarDisplay } from "@/components/ProfilePicModal";
 import {
   Home,
   Search,
@@ -508,24 +508,12 @@ export default function BenchPage() {
             className="w-7 h-7 rounded-full mt-2 ring-1 ring-orange-500/30 hover:ring-orange-500/60 transition-all overflow-hidden cursor-pointer shrink-0"
             onClick={() => setPicModalOpen(true)}
           >
-            {customPic ? (
-              customPic.startsWith("data:") ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={customPic} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white text-[10px] font-semibold" style={{ background: customPic }}>
-                  {user?.firstName?.[0] ?? "?"}
-                </div>
-              )
-            ) : user?.imageUrl ? (
-              <Image src={user.imageUrl} alt="Profile" width={28} height={28} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-orange-600 to-red-700 flex items-center justify-center">
-                <span className="text-white text-[10px] font-semibold">
-                  {user?.firstName?.[0] ?? "?"}
-                </span>
-              </div>
-            )}
+            <AvatarDisplay
+              pic={customPic}
+              fallbackUrl={user?.imageUrl}
+              initial={user?.firstName?.[0] ?? "?"}
+              className="w-full h-full"
+            />
           </div>
         </div>
       </aside>
