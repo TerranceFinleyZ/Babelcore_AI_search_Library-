@@ -39,7 +39,7 @@ export function AvatarDisplay({
   }
   if (src.startsWith("animal:")) {
     const emoji = src.replace("animal:", "");
-    return <div className={`${base} bg-zinc-800`}><span style={{ fontSize: "60%", lineHeight: 1 }}>{emoji}</span></div>;
+    return <div className={`${base} bg-zinc-800`}><span style={{ fontSize: "110%", lineHeight: 1 }}>{emoji}</span></div>;
   }
   if (src.includes("gradient")) {
     return <div className={base} style={{ background: src }}>{initial || "?"}</div>;
