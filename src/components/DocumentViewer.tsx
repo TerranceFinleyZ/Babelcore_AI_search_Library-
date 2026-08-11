@@ -17,8 +17,8 @@ export default function DocumentViewer({ document, onClose, onSummarize }: Docum
   if (!document) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6 backdrop-blur">
-      <div className="w-full max-w-3xl rounded-3xl border border-orange-500/20 bg-zinc-950 p-6 shadow-2xl shadow-orange-950/30">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6 backdrop-blur" onClick={onClose}>
+      <div className="w-full max-w-3xl rounded-3xl border border-orange-500/20 bg-zinc-950 p-6 shadow-2xl shadow-orange-950/30" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-orange-400">Document viewer</p>

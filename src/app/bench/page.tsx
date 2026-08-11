@@ -421,7 +421,7 @@ export default function BenchPage() {
                       return;
                     }
                     setActiveIcon(item.label);
-                    if (item.label === "Home") setSidebarOpen(true);
+                    if (item.label === "Home") { window.location.reload(); return; }
                   }}
                 className={`
                   w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150 group relative
@@ -620,6 +620,14 @@ export default function BenchPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Mobile backdrop — tap to close panel ─────────── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-[15] md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
 
       {/* ── Secondary side panel ──────────────────────────── */}
