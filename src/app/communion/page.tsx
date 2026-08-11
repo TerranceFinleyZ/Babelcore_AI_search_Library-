@@ -207,6 +207,7 @@ export default function CommunionPage() {
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
   const [picModalOpen, setPicModalOpen]       = useState(false);
   const [customPic, setCustomPic]             = useState<string | null>(null);
+  const [avatarPopup, setAvatarPopup]         = useState<{ user: WorkspaceUser; x: number; y: number } | null>(null);
 
   useEffect(() => {
     try {
@@ -861,21 +862,36 @@ export default function CommunionPage() {
                   {/* Avatar */}
                   <div className="shrink-0 w-9 mt-0.5">
                     {!grouped && (
-                      msg.imageUrl?.includes("gradient") ? (
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white" style={{ background: msg.imageUrl }}>
-                          {msg.initials[0]}
-                        </div>
-                      ) : msg.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={msg.imageUrl} alt={msg.user} className="w-9 h-9 rounded-xl object-cover" />
-                      ) : (
-                        <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
-                          style={{ backgroundColor: msg.color }}
-                        >
-                          {msg.initials}
-                        </div>
-                      )
+                      <div
+                        className="cursor-pointer"
+                        onClick={(e) => {
+                          if (msg.userId === myId) {
+                            setPicModalOpen(true);
+                          } else {
+                            setAvatarPopup({
+                              user: { id: msg.userId, name: msg.user, initials: msg.initials, imageUrl: msg.imageUrl, color: msg.color, lastSeen: "" },
+                              x: e.clientX,
+                              y: e.clientY,
+                            });
+                          }
+                        }}
+                      >
+                        {msg.imageUrl?.includes("gradient") ? (
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white" style={{ background: msg.imageUrl }}>
+                            {msg.initials[0]}
+                          </div>
+                        ) : msg.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={msg.imageUrl} alt={msg.user} className="w-9 h-9 rounded-xl object-cover" />
+                        ) : (
+                          <div
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
+                            style={{ backgroundColor: msg.color }}
+                          >
+                            {msg.initials}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -1309,17 +1325,6 @@ export default function CommunionPage() {
               )}
 
               {/* Default empty state */}
-
-      <ProfilePicModal
-        isOpen={picModalOpen}
-        onClose={() => setPicModalOpen(false)}
-        userInitial={user?.firstName?.[0] ?? "?"}
-        currentPic={customPic}
-        onSelect={(pic) => {
-          setCustomPic(pic);
-          try { localStorage.setItem(PROFILE_PIC_KEY, pic); } catch { /* noop */ }
-        }}
-      />
               {!searchQuery && filteredUsers.length === 0 && filteredChannels.length === 0 && (
                 <p className="text-xs text-zinc-700 text-center py-8">No workspace members yet</p>
               )}
@@ -1350,6 +1355,54 @@ export default function CommunionPage() {
                 <p className="text-xs text-zinc-500">Database &amp; Storage</p>
               </div>
             </a>
+          </div>
+        </div>
+      )}
+
+      <ProfilePicModal
+        isOpen={picModalOpen}
+        onClose={() => setPicModalOpen(false)}
+        userInitial={user?.firstName?.[0] ?? "?"}
+        currentPic={customPic}
+        onSelect={(pic) => {
+          setCustomPic(pic);
+          try { localStorage.setItem(PROFILE_PIC_KEY, pic); } catch { /* noop */ }
+        }}
+      />
+
+      {/* Avatar DM popup */}
+      {avatarPopup && (
+        <div className="fixed inset-0 z-[55]" onClick={() => setAvatarPopup(null)}>
+          <div
+            className="absolute bg-zinc-900 border border-zinc-700 rounded-2xl p-4 w-52 shadow-2xl"
+            style={{
+              left: Math.min(avatarPopup.x, (typeof window !== "undefined" ? window.innerWidth : 800) - 220),
+              top:  Math.min(avatarPopup.y, (typeof window !== "undefined" ? window.innerHeight : 600) - 140),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              {avatarPopup.user.imageUrl?.includes("gradient") ? (
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ background: avatarPopup.user.imageUrl }}>
+                  {avatarPopup.user.initials[0]}
+                </div>
+              ) : avatarPopup.user.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarPopup.user.imageUrl} alt={avatarPopup.user.name} className="w-10 h-10 rounded-xl object-cover shrink-0" />
+              ) : (
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ backgroundColor: avatarPopup.user.color }}>
+                  {avatarPopup.user.initials}
+                </div>
+              )}
+              <p className="text-sm font-bold text-zinc-100 truncate">{avatarPopup.user.name}</p>
+            </div>
+            <button
+              onClick={() => { openDM(avatarPopup.user); setAvatarPopup(null); }}
+              className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-xl bg-orange-500/20 border border-orange-500/30 text-sm text-orange-300 hover:bg-orange-500/30 transition-all"
+            >
+              <MessageSquare size={14} />
+              Send DM
+            </button>
           </div>
         </div>
       )}
