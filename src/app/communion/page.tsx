@@ -876,21 +876,25 @@ export default function CommunionPage() {
                           }
                         }}
                       >
-                        {msg.imageUrl?.includes("gradient") ? (
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white" style={{ background: msg.imageUrl }}>
-                            {msg.initials[0]}
-                          </div>
-                        ) : msg.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={msg.imageUrl} alt={msg.user} className="w-9 h-9 rounded-xl object-cover" />
-                        ) : (
-                          <div
-                            className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
-                            style={{ backgroundColor: msg.color }}
-                          >
-                            {msg.initials}
-                          </div>
-                        )}
+                        {(() => {
+                          // always reflect the latest pic for own messages
+                          const pic = msg.userId === myId ? (customPic || msg.imageUrl) : msg.imageUrl;
+                          return pic?.includes("gradient") ? (
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white" style={{ background: pic }}>
+                              {msg.initials[0]}
+                            </div>
+                          ) : pic ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={pic} alt={msg.user} className="w-9 h-9 rounded-xl object-cover" />
+                          ) : (
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
+                              style={{ backgroundColor: msg.color }}
+                            >
+                              {msg.initials}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
