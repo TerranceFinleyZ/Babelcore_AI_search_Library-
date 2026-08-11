@@ -451,13 +451,18 @@ export default function CommunionPage() {
     // Optimistically show the message immediately
     const tempId = `temp-${Date.now()}`;
     const now    = new Date();
+    // prefer custom pic; data URLs are local-only so don't store in DB
+    const localImageUrl = customPic || user?.imageUrl || undefined;
+    const dbImageUrl = customPic && !customPic.startsWith("data:") && !customPic.includes("gradient")
+      ? customPic
+      : user?.imageUrl ?? null;
     setMessages((prev) => [...prev, {
       id:             tempId,
       userId:         myId,
       user:           myName,
       initials:       myInitials,
       color:          "#f97316",
-      imageUrl:       user?.imageUrl ?? undefined,
+      imageUrl:       localImageUrl,
       time:           now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       text:           text || "",
       reactions:      [],
@@ -474,7 +479,7 @@ export default function CommunionPage() {
       user_name:      myName,
       user_initials:  myInitials,
       user_color:     "#f97316",
-      user_image_url: user?.imageUrl ?? null,
+      user_image_url: dbImageUrl,
       text:           text || "",
     };
     if (attachmentUrl)  insertPayload.attachment_url  = attachmentUrl;
@@ -851,14 +856,13 @@ export default function CommunionPage() {
                   {/* Avatar */}
                   <div className="shrink-0 w-9 mt-0.5">
                     {!grouped && (
-                      msg.imageUrl ? (
-                        <Image
-                          src={msg.imageUrl}
-                          alt={msg.user}
-                          width={36}
-                          height={36}
-                          className="w-9 h-9 rounded-xl object-cover"
-                        />
+                      msg.imageUrl?.includes("gradient") ? (
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white" style={{ background: msg.imageUrl }}>
+                          {msg.initials[0]}
+                        </div>
+                      ) : msg.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={msg.imageUrl} alt={msg.user} className="w-9 h-9 rounded-xl object-cover" />
                       ) : (
                         <div
                           className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
@@ -1152,9 +1156,10 @@ export default function CommunionPage() {
                   <div key={msg.id} className="p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/60">
                     <div className="flex items-center gap-2 mb-1.5">
                       <div className="w-5 h-5 rounded-md overflow-hidden flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-                        style={{ backgroundColor: msg.color }}>
-                        {msg.imageUrl
-                          ? <Image src={msg.imageUrl} alt={msg.user} width={20} height={20} className="w-full h-full object-cover" />
+                        style={{ backgroundColor: msg.imageUrl?.includes("gradient") ? undefined : msg.color, background: msg.imageUrl?.includes("gradient") ? msg.imageUrl : undefined }}>
+                        {msg.imageUrl && !msg.imageUrl.includes("gradient")
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={msg.imageUrl} alt={msg.user} className="w-full h-full object-cover" />
                           : msg.initials[0]}
                       </div>
                       <span className="text-xs font-semibold text-zinc-200 flex-1 truncate">{msg.user}</span>
