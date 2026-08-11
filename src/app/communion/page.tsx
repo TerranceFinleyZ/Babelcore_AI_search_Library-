@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase";
 import { useSupabase } from "@/lib/useSupabase";
+import ProfilePicModal, { PROFILE_PIC_KEY } from "@/components/ProfilePicModal";
 import {
   Hash,
   Lock,
@@ -204,6 +205,10 @@ export default function CommunionPage() {
   const [searchQuery, setSearchQuery]         = useState("");
   const [showPinned, setShowPinned]           = useState(false);
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
+  const [picModalOpen, setPicModalOpen]       = useState(false);
+  const [customPic, setCustomPic]             = useState<string | null>(() => {
+    try { return localStorage.getItem(PROFILE_PIC_KEY); } catch { return null; }
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);
@@ -581,9 +586,18 @@ export default function CommunionPage() {
           <Settings size={18} />
         </button>
         {/* Avatar */}
-        <div className="relative">
+        <div className="relative" onClick={() => setPicModalOpen(true)}>
           <div className="w-8 h-8 rounded-lg overflow-hidden bg-orange-500 flex items-center justify-center text-white text-xs font-bold cursor-pointer">
-            {user?.imageUrl ? (
+            {customPic ? (
+              customPic.startsWith("data:") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={customPic} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white text-xs font-bold" style={{ background: customPic }}>
+                  {user?.firstName?.[0] ?? "Y"}
+                </div>
+              )
+            ) : user?.imageUrl ? (
               <Image src={user.imageUrl} alt="Profile" width={32} height={32} className="w-full h-full object-cover" />
             ) : (
               user?.firstName?.[0] ?? "Y"
@@ -1285,6 +1299,17 @@ export default function CommunionPage() {
               )}
 
               {/* Default empty state */}
+
+      <ProfilePicModal
+        isOpen={picModalOpen}
+        onClose={() => setPicModalOpen(false)}
+        userInitial={user?.firstName?.[0] ?? "?"}
+        currentPic={customPic}
+        onSelect={(pic) => {
+          setCustomPic(pic);
+          try { localStorage.setItem(PROFILE_PIC_KEY, pic); } catch { /* noop */ }
+        }}
+      />
               {!searchQuery && filteredUsers.length === 0 && filteredChannels.length === 0 && (
                 <p className="text-xs text-zinc-700 text-center py-8">No workspace members yet</p>
               )}

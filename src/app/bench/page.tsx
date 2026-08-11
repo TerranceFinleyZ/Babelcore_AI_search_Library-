@@ -7,6 +7,7 @@ import { useClerk, useUser } from "@clerk/nextjs";
 import LibraryPanel from "@/components/LibraryPanel";
 import NewsPanel from "@/components/NewsPanel";
 import CareersPanel from "@/components/CareersPanel";
+import ProfilePicModal, { PROFILE_PIC_KEY } from "@/components/ProfilePicModal";
 import {
   Home,
   Search,
@@ -190,6 +191,10 @@ export default function BenchPage() {
   const [bibleError, setBibleError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [clipbunModalOpen, setClipbunModalOpen] = useState(false);
+  const [picModalOpen, setPicModalOpen] = useState(false);
+  const [customPic, setCustomPic] = useState<string | null>(() => {
+    try { return localStorage.getItem(PROFILE_PIC_KEY); } catch { return null; }
+  });
   const [notesVisible, setNotesVisible] = useState(false);
   const [notesText, setNotesText] = useState("");
   const [notesSaveStatus, setNotesSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -494,8 +499,20 @@ export default function BenchPage() {
             )}
           </div>
           {/* Avatar */}
-          <div className="w-7 h-7 rounded-full mt-2 ring-1 ring-orange-500/30 hover:ring-orange-500/60 transition-all overflow-hidden cursor-pointer shrink-0">
-            {user?.imageUrl ? (
+          <div
+            className="w-7 h-7 rounded-full mt-2 ring-1 ring-orange-500/30 hover:ring-orange-500/60 transition-all overflow-hidden cursor-pointer shrink-0"
+            onClick={() => setPicModalOpen(true)}
+          >
+            {customPic ? (
+              customPic.startsWith("data:") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={customPic} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white text-[10px] font-semibold" style={{ background: customPic }}>
+                  {user?.firstName?.[0] ?? "?"}
+                </div>
+              )
+            ) : user?.imageUrl ? (
               <Image src={user.imageUrl} alt="Profile" width={28} height={28} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-orange-600 to-red-700 flex items-center justify-center">
@@ -1529,6 +1546,17 @@ export default function BenchPage() {
           </div>
         </div>
       )}
+
+      <ProfilePicModal
+        isOpen={picModalOpen}
+        onClose={() => setPicModalOpen(false)}
+        userInitial={user?.firstName?.[0] ?? "?"}
+        currentPic={customPic}
+        onSelect={(pic) => {
+          setCustomPic(pic);
+          try { localStorage.setItem(PROFILE_PIC_KEY, pic); } catch { /* noop */ }
+        }}
+      />
     </div>
   );
 }
