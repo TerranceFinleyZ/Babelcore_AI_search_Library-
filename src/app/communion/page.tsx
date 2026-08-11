@@ -172,9 +172,9 @@ function groupReactions(
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  online: "#22c55e",
-  away: "#eab308",
-  offline: "#52525b",
+  online:  "#22c55e",
+  away:    "#eab308",
+  offline: "#ef4444",
 };
 
 // ── Component ──────────────────────────────────────────────
@@ -859,7 +859,7 @@ export default function CommunionPage() {
                   <div className="shrink-0 w-9 mt-0.5">
                     {!grouped && (
                       <div
-                        className="cursor-pointer"
+                        className="relative cursor-pointer"
                         onClick={(e) => {
                           if (msg.userId === myId) {
                             setPicModalOpen(true);
@@ -879,6 +879,11 @@ export default function CommunionPage() {
                           const pic = msg.userId === myId ? (customPic || msg.imageUrl) : msg.imageUrl;
                           return <AvatarDisplay pic={pic ?? null} initial={msg.initials[0]} color={msg.color} className="w-9 h-9 rounded-xl" />;
                         })()}
+                        {/* Status dot */}
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-zinc-950"
+                          style={{ backgroundColor: onlineUserIds.has(msg.userId) ? STATUS_COLOR.online : STATUS_COLOR.offline }}
+                        />
                       </div>
                     )}
                   </div>
