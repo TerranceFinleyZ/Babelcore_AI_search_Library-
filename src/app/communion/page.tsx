@@ -205,6 +205,10 @@ export default function CommunionPage() {
   const [searchQuery, setSearchQuery]         = useState("");
   const [showPinned, setShowPinned]           = useState(false);
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
+  const [reportMsgId, setReportMsgId]         = useState<string | null>(null);
+  const [reportCategory, setReportCategory]   = useState("other");
+  const [reportDesc, setReportDesc]           = useState("");
+  const [reportStatus, setReportStatus]       = useState<"idle" | "loading" | "done" | "error">("idle");
   const [picModalOpen, setPicModalOpen]       = useState(false);
   const [customPic, setCustomPic]             = useState<string | null>(null);
   const [avatarPopup, setAvatarPopup]         = useState<{ user: WorkspaceUser; x: number; y: number } | null>(null);
@@ -991,6 +995,15 @@ export default function CommunionPage() {
                               Delete
                             </button>
                           )}
+                          {msg.userId !== myId && (
+                            <button
+                              onClick={() => { setReportMsgId(msg.id); setMessageMenuId(null); setReportCategory("other"); setReportDesc(""); setReportStatus("idle"); }}
+                              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-orange-400 hover:bg-zinc-700 hover:text-orange-300 transition-all"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                              Report
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1417,6 +1430,72 @@ export default function CommunionPage() {
                 <p className="text-xs text-zinc-600 text-center py-6">No other members have joined yet.</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Report message modal ── */}
+      {reportMsgId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setReportMsgId(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-zinc-100">Report Message</h3>
+              <button onClick={() => setReportMsgId(null)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X size={16} /></button>
+            </div>
+            {reportStatus === "done" ? (
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <span className="text-2xl">✅</span>
+                <p className="text-sm text-zinc-300">Report submitted. Thank you.</p>
+                <button onClick={() => setReportMsgId(null)} className="mt-2 px-4 py-1.5 rounded-xl bg-zinc-800 text-xs text-zinc-300 hover:bg-zinc-700 transition-all">Close</button>
+              </div>
+            ) : (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">Reason</p>
+                <div className="flex flex-col gap-1.5 mb-4">
+                  {[
+                    { value: "sexual-content", label: "Sexual / inappropriate content" },
+                    { value: "glitch",         label: "Glitch / spam" },
+                    { value: "other",           label: "Other" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setReportCategory(opt.value)}
+                      className={`px-3 py-2 rounded-xl text-xs text-left transition-all border ${
+                        reportCategory === opt.value
+                          ? "border-orange-500/60 bg-orange-500/10 text-orange-300"
+                          : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">Details (optional)</p>
+                <textarea
+                  value={reportDesc}
+                  onChange={(e) => setReportDesc(e.target.value)}
+                  placeholder="Describe the issue…"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-800 border border-zinc-700 text-sm text-zinc-300 placeholder-zinc-600 resize-none outline-none focus:border-zinc-500 mb-4"
+                />
+                {reportStatus === "error" && <p className="text-xs text-red-400 mb-3">Something went wrong. Try again.</p>}
+                <button
+                  disabled={reportStatus === "loading"}
+                  onClick={async () => {
+                    setReportStatus("loading");
+                    const msg = currentMessages.find((m) => m.id === reportMsgId);
+                    const desc = reportDesc.trim() || `Message by ${msg?.user ?? "unknown"}: "${msg?.text?.slice(0, 200) ?? ""}"`;
+                    try {
+                      const res = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: reportCategory, description: desc }) });
+                      setReportStatus(res.ok ? "done" : "error");
+                    } catch { setReportStatus("error"); }
+                  }}
+                  className="w-full py-2 rounded-xl bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white text-sm font-semibold transition-all"
+                >
+                  {reportStatus === "loading" ? "Submitting…" : "Submit Report"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
