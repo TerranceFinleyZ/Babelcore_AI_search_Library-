@@ -193,6 +193,14 @@ export default function CommunionPage() {
   const [channels, setChannels]               = useState<Channel[]>([]);
   const [dmUsers, setDmUsers]                 = useState<WorkspaceUser[]>([]);
   const [openDMs, setOpenDMs]                 = useState<string[]>([]);
+  const [dmContactMap, setDmContactMap]       = useState<Record<string, WorkspaceUser>>({});
+  const [dmUnread, setDmUnread]               = useState<Record<string, number>>({});
+  const [threadMsgId, setThreadMsgId]         = useState<string | null>(null);
+  const [threadReplies, setThreadReplies]     = useState<Message[]>([]);
+  const [threadInput, setThreadInput]         = useState("");
+  const [threadCounts, setThreadCounts]       = useState<Record<string, number>>({});
+  const [threadUnread, setThreadUnread]       = useState<Record<string, number>>({});
+  const [threadLoading, setThreadLoading]     = useState(false);
   const [showNewChannel, setShowNewChannel]   = useState(false);
   const [showNewDM, setShowNewDM]             = useState(false);
   const [showSettings, setShowSettings]       = useState(false);
@@ -203,6 +211,8 @@ export default function CommunionPage() {
   const [gifUrl, setGifUrl]                   = useState<string | null>(null);
   const [showSearch, setShowSearch]           = useState(false);
   const [searchQuery, setSearchQuery]         = useState("");
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState("");
+  const [sidebarSearchFocused, setSidebarSearchFocused] = useState(false);
   const [showPinned, setShowPinned]           = useState(false);
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
   const [reportMsgId, setReportMsgId]         = useState<string | null>(null);
@@ -219,10 +229,23 @@ export default function CommunionPage() {
       if (stored) setCustomPic(stored);
     } catch { /* noop */ }
   }, []);
+
+  // Load persisted DMs on mount (client-only, avoids SSR mismatch)
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem("communion_open_dms");
+      if (s) setOpenDMs(JSON.parse(s));
+      const c = localStorage.getItem("communion_dm_contacts");
+      if (c) setDmContactMap(JSON.parse(c));
+    } catch { /* noop */ }
+  }, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const messagesEndRef  = useRef<HTMLDivElement>(null);
+  const threadEndRef    = useRef<HTMLDivElement>(null);
+  // accumulates IDs of messages the current user has authored (for thread notification matching)
+  const myMsgIdsRef     = useRef<Set<string>>(new Set());
 
   const myId       = user?.id ?? "anon";
   const myName     = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
@@ -360,6 +383,76 @@ export default function CommunionPage() {
       }))));
   }, [user, myId, myName, myInitials]);
 
+  // Supplement dmUsers with unique senders from messages (catches users who haven't visited recently)
+  useEffect(() => {
+    supabase.from("messages")
+      .select("user_id, user_name, user_initials, user_color, user_image_url")
+      .then(({ data }) => {
+        if (!data) return;
+        const seen = new Set<string>();
+        const extras: WorkspaceUser[] = [];
+        for (const row of data) {
+          if (seen.has(row.user_id)) continue;
+          seen.add(row.user_id);
+          extras.push({
+            id: row.user_id, name: row.user_name,
+            initials: row.user_initials, color: row.user_color,
+            imageUrl: row.user_image_url ?? undefined, lastSeen: "",
+          });
+        }
+        setDmUsers((prev) => {
+          const merged = [...prev];
+          for (const u of extras) {
+            if (!merged.some((m) => m.id === u.id)) merged.push(u);
+          }
+          return merged;
+        });
+      });
+  }, []);
+
+  // Auto-add incoming DM channels to the sidebar for the recipient
+  useEffect(() => {
+    if (!myId || myId === "anon") return;
+    const incomingSub = supabase
+      .channel("incoming-dms:" + myId)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const row = payload.new as Record<string, string>;
+          const chId = row.channel_id;
+          // ── DM notifications ──
+          if (chId?.startsWith("dm:") && chId.includes(myId)) {
+            setOpenDMs((prev) => {
+              if (prev.includes(chId)) return prev;
+              const next = [...prev, chId];
+              try { localStorage.setItem("communion_open_dms", JSON.stringify(next)); } catch { /* noop */ }
+              return next;
+            });
+            if (row.user_id !== myId) {
+              setDmUnread((prev) => {
+                const active = window.__communionActiveChannel__ as string | undefined;
+                if (active === chId) return prev;
+                return { ...prev, [chId]: (prev[chId] ?? 0) + 1 };
+              });
+            }
+          }
+          // ── Thread reply notifications ──
+          if (chId?.startsWith("thread:") && row.user_id !== myId) {
+            const parentMsgId = chId.replace("thread:", "");
+            if (myMsgIdsRef.current.has(parentMsgId)) {
+              setThreadUnread((prev) => {
+                const activeThread = (window as Record<string, unknown>).__communionThreadMsgId__ as string | undefined;
+                if (activeThread === parentMsgId) return prev;
+                return { ...prev, [parentMsgId]: (prev[parentMsgId] ?? 0) + 1 };
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(incomingSub); };
+  }, [myId]);
+
   // Track online presence for all workspace members
   useEffect(() => {
     if (!user) return;
@@ -392,6 +485,63 @@ export default function CommunionPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [threadReplies]);
+
+  // Load thread reply counts for the current channel's messages
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const chIds = messages.map((m) => `thread:${m.id}`);
+    supabase.from("messages").select("channel_id")
+      .in("channel_id", chIds)
+      .then(({ data }) => {
+        if (!data) return;
+        const counts: Record<string, number> = {};
+        for (const row of data) counts[row.channel_id.replace("thread:", "")] = (counts[row.channel_id.replace("thread:", "")] ?? 0) + 1;
+        setThreadCounts(counts);
+      });
+  }, [messages]);
+
+  // Load and subscribe to thread replies
+  useEffect(() => {
+    if (!threadMsgId) { setThreadReplies([]); return; }
+    const chId = `thread:${threadMsgId}`;
+    setThreadLoading(true);
+    supabase.from("messages").select("*").eq("channel_id", chId).order("created_at", { ascending: true })
+      .then(({ data }) => {
+        setThreadReplies((data ?? []).map((row) => ({
+          id: row.id, userId: row.user_id, user: row.user_name,
+          initials: row.user_initials, color: row.user_color,
+          imageUrl: row.user_image_url ?? undefined,
+          time: new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          text: row.text, reactions: [], pinned: false,
+          attachmentUrl: row.attachment_url ?? undefined,
+          attachmentName: row.attachment_name ?? undefined,
+        })));
+        setThreadLoading(false);
+      });
+    const sub = supabase.channel(`thread-room:${threadMsgId}`)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${chId}` },
+        (payload) => {
+          const row = payload.new as Record<string, string>;
+          setThreadReplies((prev) => {
+            if (prev.some((m) => m.id === row.id)) return prev;
+            return [...prev, {
+              id: row.id, userId: row.user_id, user: row.user_name,
+              initials: row.user_initials, color: row.user_color,
+              imageUrl: row.user_image_url ?? undefined,
+              time: new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              text: row.text, reactions: [], pinned: false,
+            }];
+          });
+          setThreadCounts((prev) => ({ ...prev, [threadMsgId]: (prev[threadMsgId] ?? 0) + 1 }));
+        }
+      ).subscribe();
+    return () => { supabase.removeChannel(sub); };
+  }, [threadMsgId]);
+
   // Ctrl/Cmd+K opens search
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -407,6 +557,37 @@ export default function CommunionPage() {
   }, []);
 
   const isDM = activeChannel.startsWith("dm:");
+
+  // Sync active channel to window for the unread closure, and clear unread when switching into a DM
+  useEffect(() => {
+    (window as Record<string, unknown>).__communionActiveChannel__ = activeChannel;
+    if (activeChannel.startsWith("dm:")) {
+      setDmUnread((prev) => {
+        if (!prev[activeChannel]) return prev;
+        const next = { ...prev };
+        delete next[activeChannel];
+        return next;
+      });
+    }
+  }, [activeChannel]);
+
+  // Track my authored message IDs so the incoming subscription can match thread notifications
+  useEffect(() => {
+    messages.forEach((m) => { if (m.userId === myId) myMsgIdsRef.current.add(m.id); });
+  }, [messages, myId]);
+
+  // Sync active thread to window and clear thread unread when opening a thread
+  useEffect(() => {
+    (window as Record<string, unknown>).__communionThreadMsgId__ = threadMsgId ?? "";
+    if (threadMsgId) {
+      setThreadUnread((prev) => {
+        if (!prev[threadMsgId]) return prev;
+        const next = { ...prev };
+        delete next[threadMsgId];
+        return next;
+      });
+    }
+  }, [threadMsgId]);
   const channel = channels.find((c) => c.id === activeChannel);
   const otherUserId = isDM ? activeChannel.split(":").find((id) => id !== "dm" && id !== myId) : undefined;
   const activeDMUser = dmUsers.find((u) => u.id === otherUserId);
@@ -506,6 +687,31 @@ export default function CommunionPage() {
     setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: data.id } : m));
   }
 
+  async function sendThreadReply() {
+    const text = threadInput.trim();
+    if (!text || !threadMsgId) return;
+    setThreadInput("");
+    const tempId = `temp-${Date.now()}`;
+    const now = new Date();
+    const localImageUrl = customPic || user?.imageUrl || undefined;
+    const dbImageUrl = customPic && !customPic.startsWith("data:") && !customPic.includes("gradient") ? customPic : user?.imageUrl ?? null;
+    setThreadReplies((prev) => [...prev, {
+      id: tempId, userId: myId, user: myName, initials: myInitials,
+      color: "#f97316", imageUrl: localImageUrl,
+      time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      text, reactions: [], pinned: false,
+    }]);
+    const { data, error } = await db.from("messages").insert({
+      channel_id: `thread:${threadMsgId}`,
+      user_id: myId, user_name: myName, user_initials: myInitials,
+      user_color: "#f97316", user_image_url: dbImageUrl, text,
+    }).select("id").single();
+    if (!error && data?.id) {
+      setThreadReplies((prev) => prev.map((m) => m.id === tempId ? { ...m, id: data.id } : m));
+      setThreadCounts((prev) => ({ ...prev, [threadMsgId]: (prev[threadMsgId] ?? 0) + 1 }));
+    }
+  }
+
   async function toggleReaction(msgId: string, emoji: string) {
     setEmojiTarget(null);
     const msg = messages.find((m) => m.id === msgId);
@@ -558,7 +764,18 @@ export default function CommunionPage() {
 
   function openDM(other: WorkspaceUser) {
     const dmId = ["dm", ...[myId, other.id].sort()].join(":");
-    setOpenDMs((prev) => prev.includes(dmId) ? prev : [...prev, dmId]);
+    setOpenDMs((prev) => {
+      if (prev.includes(dmId)) return prev;
+      const next = [...prev, dmId];
+      try { localStorage.setItem("communion_open_dms", JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+    setDmContactMap((prev) => {
+      if (prev[dmId]) return prev;
+      const next = { ...prev, [dmId]: other };
+      try { localStorage.setItem("communion_dm_contacts", JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
     setActiveChannel(dmId);
     setShowNewDM(false);
     setMobileSidebar(false);
@@ -587,8 +804,17 @@ export default function CommunionPage() {
         <Link href="/bench" className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-all" title="Back to Bench">
           <Home size={18} />
         </Link>
-        <button className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
+        <button className="relative w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
           <Bell size={18} />
+          {(() => {
+            const total = Object.values(dmUnread).reduce((a, b) => a + b, 0)
+              + Object.values(threadUnread).reduce((a, b) => a + b, 0);
+            return total > 0 ? (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5">
+                {total > 99 ? "99+" : total}
+              </span>
+            ) : null;
+          })()}
         </button>
         <button className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-all">
           <Bookmark size={18} />
@@ -634,14 +860,57 @@ export default function CommunionPage() {
 
         {/* Search */}
         <div className="px-3 py-2">
-          <button
-            onClick={() => { setShowSearch(true); setSearchQuery(""); }}
-            className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all"
-          >
-            <Search size={12} />
-            Search Core
-            <kbd className="ml-auto text-[10px] text-zinc-700 bg-zinc-800 border border-zinc-700 rounded px-1">⌘K</kbd>
-          </button>
+          <div className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700/50 focus-within:border-zinc-600 focus-within:bg-zinc-800 transition-all">
+            <Search size={12} className="text-zinc-500 shrink-0" />
+            <input
+              value={sidebarSearchQuery}
+              onChange={(e) => setSidebarSearchQuery(e.target.value)}
+              onFocus={() => setSidebarSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSidebarSearchFocused(false), 150)}
+              placeholder="Search people…"
+              className="flex-1 bg-transparent text-xs text-zinc-300 placeholder-zinc-600 outline-none min-w-0"
+            />
+            {sidebarSearchQuery
+              ? <button onMouseDown={(e) => { e.preventDefault(); setSidebarSearchQuery(""); }} className="text-zinc-600 hover:text-zinc-400 transition-colors"><X size={10} /></button>
+              : <kbd className="text-[10px] text-zinc-700 bg-zinc-800 border border-zinc-700 rounded px-1 shrink-0">⌘K</kbd>
+            }
+          </div>
+
+          {/* Suggestions render inline so sidebar overflow-y-auto doesn't clip them */}
+          {sidebarSearchFocused && sidebarSearchQuery.trim() && (() => {
+            const q = sidebarSearchQuery.toLowerCase();
+            const matches = dmUsers.filter((u) => u.id !== myId && u.name.toLowerCase().includes(q));
+            return (
+              <div className="mt-1 rounded-xl border border-zinc-700 bg-zinc-900 overflow-hidden">
+                {matches.length === 0 ? (
+                  <p className="text-[10px] text-zinc-600 text-center py-3">No users found</p>
+                ) : matches.slice(0, 6).map((u) => (
+                  <button
+                    key={u.id}
+                    onMouseDown={(e) => { e.preventDefault(); openDM(u); setSidebarSearchQuery(""); }}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-zinc-800 transition-all text-left"
+                  >
+                    <div className="relative shrink-0">
+                      <AvatarDisplay
+                        pic={u.imageUrl ?? null}
+                        initial={u.initials[0]}
+                        color={u.color}
+                        className="w-7 h-7 rounded-lg text-[11px]"
+                      />
+                      {onlineUserIds.has(u.id) && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-900" style={{ backgroundColor: STATUS_COLOR.online }} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-zinc-200 truncate">{u.name}</p>
+                      <p className="text-[10px] text-zinc-600">{onlineUserIds.has(u.id) ? "Active now" : "Offline"}</p>
+                    </div>
+                    <MessageSquare size={12} className="text-zinc-700 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Home */}
@@ -715,32 +984,50 @@ export default function CommunionPage() {
             <div className="mt-0.5 flex flex-col gap-px">
               {openDMs.map((dmId) => {
                 const otherId = dmId.split(":").find((id) => id !== "dm" && id !== myId);
-                const other = dmUsers.find((u) => u.id === otherId);
+                const other = dmUsers.find((u) => u.id === otherId) ?? dmContactMap[dmId];
                 if (!other) return null;
                 return (
-                  <button
-                    key={dmId}
-                    onClick={() => { setActiveChannel(dmId); setMobileSidebar(false); }}
-                    className={`flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs transition-all ${
-                      activeChannel === dmId
-                        ? "bg-orange-500/15 text-orange-300"
-                        : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                    }`}
-                  >
-                    <div className="relative shrink-0">
-                      <div className="w-5 h-5 rounded-md overflow-hidden flex items-center justify-center text-[9px] font-bold text-white"
-                        style={{ backgroundColor: other.color }}>
-                        {other.imageUrl
-                          ? <Image src={other.imageUrl} alt={other.name} width={20} height={20} className="w-full h-full object-cover" />
-                          : other.initials[0]}
+                  <div key={dmId} className="group relative flex items-center">
+                    <button
+                      onClick={() => { setActiveChannel(dmId); setMobileSidebar(false); }}
+                      className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1 rounded-md text-xs transition-all ${
+                        activeChannel === dmId
+                          ? "bg-orange-500/15 text-orange-300"
+                          : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-5 h-5 rounded-md overflow-hidden flex items-center justify-center text-[9px] font-bold text-white"
+                          style={{ backgroundColor: other.color }}>
+                          {other.imageUrl
+                            ? <Image src={other.imageUrl} alt={other.name} width={20} height={20} className="w-full h-full object-cover" />
+                            : other.initials[0]}
+                        </div>
+                        {onlineUserIds.has(other.id) && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-900"
+                            style={{ backgroundColor: STATUS_COLOR.online }} />
+                        )}
                       </div>
-                      {onlineUserIds.has(other.id) && (
-                        <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-900"
-                          style={{ backgroundColor: STATUS_COLOR.online }} />
+                      <span className="truncate flex-1 text-left">{other.name}</span>
+                      {dmUnread[dmId] > 0 && (
+                        <span className="shrink-0 min-w-[16px] h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5">
+                          {dmUnread[dmId] > 99 ? "99+" : dmUnread[dmId]}
+                        </span>
                       )}
-                    </div>
-                    <span className="truncate flex-1 text-left">{other.name}</span>
-                  </button>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const next = openDMs.filter((id) => id !== dmId);
+                        setOpenDMs(next);
+                        try { localStorage.setItem("communion_open_dms", JSON.stringify(next)); } catch { /* noop */ }
+                        if (activeChannel === dmId) setActiveChannel("general");
+                      }}
+                      className="hidden group-hover:flex shrink-0 w-4 h-4 items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-all mr-1"
+                      title="Remove"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
                 );
               })}
               <button
@@ -772,11 +1059,12 @@ export default function CommunionPage() {
             </button>
             {isDM ? (
               <>
-                <div className="w-6 h-6 rounded-md overflow-hidden flex items-center justify-center text-[10px] font-bold text-white bg-zinc-700 shrink-0">
-                  {activeDMUser?.imageUrl
-                    ? <Image src={activeDMUser.imageUrl} alt={activeDMUser.name} width={24} height={24} className="w-full h-full object-cover" />
-                    : activeDMUser?.initials[0]}
-                </div>
+                <AvatarDisplay
+                  pic={activeDMUser?.imageUrl ?? null}
+                  initial={activeDMUser?.initials[0] ?? "?"}
+                  color={activeDMUser?.color}
+                  className="w-6 h-6 rounded-md shrink-0 text-[10px]"
+                />
                 <span className="text-sm font-bold text-zinc-100">{activeDMUser?.name ?? "Direct Message"}</span>
               </>
             ) : (
@@ -832,6 +1120,33 @@ export default function CommunionPage() {
                   ? "This channel is for workspace-wide notices and announcements."
                   : `This is the very beginning of the #${channel?.name} channel.`}
               </p>
+            </div>
+          )}
+
+          {/* DM intro */}
+          {isDM && activeDMUser && (
+            <div className="mb-6 pb-6 border-b border-zinc-800/60 flex flex-col items-start gap-3">
+              <div className="relative">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center text-xl font-bold text-white shadow-lg"
+                  style={{ backgroundColor: activeDMUser.color }}>
+                  <AvatarDisplay
+                    pic={activeDMUser.imageUrl ?? null}
+                    initial={activeDMUser.initials[0]}
+                    color={activeDMUser.color}
+                    className="w-full h-full"
+                  />
+                </div>
+                <span
+                  className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-zinc-950"
+                  style={{ backgroundColor: onlineUserIds.has(activeDMUser.id) ? STATUS_COLOR.online : STATUS_COLOR.offline }}
+                />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-zinc-100">{activeDMUser.name}</h2>
+                <p className="text-sm text-zinc-500 mt-0.5">
+                  This is the beginning of your direct message history with <span className="text-zinc-300 font-medium">{activeDMUser.name}</span>.
+                </p>
+              </div>
             </div>
           )}
 
@@ -935,19 +1250,36 @@ export default function CommunionPage() {
                     {/* Reactions */}
                     {msg.reactions.length > 0 && (
                       <div className="flex gap-1.5 mt-1.5 flex-wrap items-center">
-                        {msg.reactions.map((r) => (
-                          <button
-                            key={r.emoji}
-                            onClick={() => toggleReaction(msg.id, r.emoji)}
-                            className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-all ${
-                              r.users.includes(myId)
-                                ? "bg-orange-500/20 border-orange-500/50 text-orange-300"
-                                : "bg-zinc-800 border-zinc-700 hover:border-orange-500/40 hover:bg-zinc-700 text-zinc-300"
-                            }`}
-                          >
-                            {r.emoji} <span className="text-zinc-400 ml-0.5">{r.users.length}</span>
-                          </button>
-                        ))}
+                        {msg.reactions.map((r) => {
+                          const reactorNames = r.users.map((uid) => ({
+                            uid,
+                            name: uid === myId ? myName : (dmUsers.find((u) => u.id === uid)?.name ?? "Unknown"),
+                          }));
+                          return (
+                            <div key={r.emoji} className="relative group/rx">
+                              <button
+                                onClick={() => toggleReaction(msg.id, r.emoji)}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-all ${
+                                  r.users.includes(myId)
+                                    ? "bg-orange-500/20 border-orange-500/50 text-orange-300"
+                                    : "bg-zinc-800 border-zinc-700 hover:border-orange-500/40 hover:bg-zinc-700 text-zinc-300"
+                                }`}
+                              >
+                                {r.emoji} <span className="text-zinc-400 ml-0.5">{r.users.length}</span>
+                              </button>
+                              {/* Hover tooltip listing every reactor */}
+                              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/rx:block z-50">
+                                <div className="bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 shadow-xl whitespace-nowrap min-w-max">
+                                  <p className="text-[10px] font-semibold text-zinc-400 mb-1">{r.emoji} Reacted</p>
+                                  {reactorNames.map(({ uid, name }) => (
+                                    <p key={uid} className="text-[11px] text-zinc-200 leading-snug">{name}</p>
+                                  ))}
+                                </div>
+                                <div className="w-2 h-2 bg-zinc-800 border-r border-b border-zinc-700 rotate-45 mx-auto -mt-1" />
+                              </div>
+                            </div>
+                          );
+                        })}
                         <div className="relative" ref={emojiTarget === `reaction:${msg.id}` ? pickerRef : undefined}>
                           <button
                             onClick={() => setEmojiTarget(emojiTarget === `reaction:${msg.id}` ? null : `reaction:${msg.id}`)}
@@ -958,6 +1290,21 @@ export default function CommunionPage() {
                           {emojiTarget === `reaction:${msg.id}` && <EmojiPicker onSelect={handleEmojiSelect} />}
                         </div>
                       </div>
+                    )}
+                    {/* Thread reply count */}
+                    {threadCounts[msg.id] > 0 && (
+                      <button
+                        onClick={() => { setThreadMsgId(msg.id); setShowPinned(false); }}
+                        className="flex items-center gap-1.5 mt-1.5 text-[11px] text-orange-400 hover:text-orange-300 hover:underline transition-colors"
+                      >
+                        <MessageSquare size={11} />
+                        {threadCounts[msg.id]} {threadCounts[msg.id] === 1 ? "reply" : "replies"}
+                        {threadUnread[msg.id] > 0 && (
+                          <span className="ml-1 min-w-[16px] h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5">
+                            {threadUnread[msg.id]}
+                          </span>
+                        )}
+                      </button>
                     )}
                   </div>
 
@@ -973,7 +1320,9 @@ export default function CommunionPage() {
                       </button>
                       {emojiTarget === `reaction:${msg.id}` && <EmojiPicker onSelect={handleEmojiSelect} placement="below" />}
                     </div>
-                    <button className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="Reply in thread">
+                    <button
+                      onClick={() => { setThreadMsgId(msg.id); setShowPinned(false); }}
+                      className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-all" title="Reply in thread">
                       <MessageSquare size={13} />
                     </button>
                     <button
@@ -1204,9 +1553,109 @@ export default function CommunionPage() {
             </div>
           </div>
         )}
+
+        {/* ── Thread panel ── */}
+        {threadMsgId && (() => {
+          const parent = currentMessages.find((m) => m.id === threadMsgId);
+          return (
+            <div className="absolute inset-y-0 right-0 w-[360px] bg-zinc-900 border-l border-zinc-800 flex flex-col z-20 shadow-2xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={14} className="text-orange-400" />
+                  <span className="text-sm font-bold text-zinc-100">Thread</span>
+                </div>
+                <button onClick={() => setThreadMsgId(null)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X size={14} /></button>
+              </div>
+
+              {/* Original message */}
+              {parent && (
+                <div className="px-4 py-3 border-b border-zinc-800/60 shrink-0">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <AvatarDisplay
+                      pic={parent.userId === myId ? (customPic || parent.imageUrl || null) : (parent.imageUrl || null)}
+                      initial={parent.initials[0]} color={parent.color}
+                      className="w-7 h-7 rounded-lg shrink-0 text-[11px]"
+                    />
+                    <span className="text-xs font-bold text-zinc-100">{parent.user}</span>
+                    <span className="text-[11px] text-zinc-600">{parent.time}</span>
+                  </div>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{parent.text}</p>
+                  <p className="text-[10px] text-zinc-600 mt-1.5">
+                    {threadCounts[threadMsgId] ?? 0} {(threadCounts[threadMsgId] ?? 0) === 1 ? "reply" : "replies"}
+                  </p>
+                </div>
+              )}
+
+              {/* Replies */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+                {threadLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-4 h-4 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+                  </div>
+                ) : threadReplies.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-zinc-700 gap-2">
+                    <MessageSquare size={28} strokeWidth={1} />
+                    <p className="text-xs">No replies yet. Start the conversation!</p>
+                  </div>
+                ) : (
+                  threadReplies.map((reply, i) => {
+                    const prevReply = threadReplies[i - 1];
+                    const grouped = prevReply?.user === reply.user;
+                    return (
+                      <div key={reply.id} className="flex gap-2.5" style={{ marginTop: grouped ? 0 : 8 }}>
+                        <div className="shrink-0 w-7 mt-0.5">
+                          {!grouped && (
+                            <AvatarDisplay
+                              pic={reply.userId === myId ? (customPic || reply.imageUrl || null) : (reply.imageUrl || null)}
+                              initial={reply.initials[0]} color={reply.color}
+                              className="w-7 h-7 rounded-lg text-[11px]"
+                            />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {!grouped && (
+                            <div className="flex items-baseline gap-1.5 mb-0.5">
+                              <span className="text-xs font-bold text-zinc-100">{reply.user}</span>
+                              <span className="text-[10px] text-zinc-600">{reply.time}</span>
+                            </div>
+                          )}
+                          <p className="text-sm text-zinc-300 leading-relaxed">{reply.text}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={threadEndRef} />
+              </div>
+
+              {/* Reply input */}
+              <div className="shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800">
+                <div className="rounded-xl border border-zinc-700 bg-zinc-950 focus-within:border-zinc-600 transition-colors">
+                  <textarea
+                    rows={2}
+                    value={threadInput}
+                    onChange={(e) => setThreadInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendThreadReply(); } }}
+                    placeholder="Reply in thread…"
+                    className="w-full resize-none bg-transparent px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none leading-relaxed"
+                  />
+                  <div className="flex justify-end px-3 pb-2">
+                    <button
+                      onClick={sendThreadReply}
+                      disabled={!threadInput.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all"
+                    >
+                      <Send size={12} /> Reply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
-      {/* ── Add Channel modal ── */}
       {showNewChannel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowNewChannel(false)}>
           <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1402,7 +1851,7 @@ export default function CommunionPage() {
             {/* Mobile-only message actions */}
             <div className="sm:hidden mt-3 pt-3 border-t border-zinc-700/60 flex flex-col gap-1">
               <button
-                onClick={() => setAvatarPopup(null)}
+                onClick={() => { setThreadMsgId(avatarPopup.msgId); setAvatarPopup(null); setShowPinned(false); }}
                 className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm text-zinc-300 hover:bg-zinc-800 transition-all"
               >
                 <MessageSquare size={13} />
