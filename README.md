@@ -1,6 +1,7 @@
 https://babelcore.net/
 
-
+Star this repository to enter for a chance to win the grand prize.
+Your support helps the project grow—and it might just pay off.
 
 https://github.com/user-attachments/assets/aed8a62e-40eb-4bfe-934a-89dc0ec748dd
 
