@@ -18,8 +18,10 @@
     "fluent-ffmpeg": "^2.1.3",
     "html-to-image": "^1.11.13",
     "lucide-react": "^1.27.0",
+    "mammoth": "^1.12.1",
     "next": "16.2.10",
     "oracledb": "^7.0.1",
+    "pdf-parse": "^2.4.5",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -27,6 +29,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

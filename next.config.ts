@@ -13,7 +13,7 @@ function getBuildId(): string {
 
 const nextConfig: NextConfig = {
   generateBuildId: getBuildId,
-  serverExternalPackages: ["oracledb", "ffmpeg-static", "fluent-ffmpeg"],
+  serverExternalPackages: ["oracledb", "ffmpeg-static", "fluent-ffmpeg", "pdf-parse"],
   images: {
     remotePatterns: [
       {

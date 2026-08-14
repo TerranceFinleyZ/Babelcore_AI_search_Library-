@@ -45,7 +45,7 @@ const EMOJIS = [
   "🍕","🎵","🏆","🎨","💻","📱","🌍","🦁","🐉","⚔️",
 ];
 
-function EmojiPicker({ onSelect, onGifSelect, placement = "above" }: { onSelect: (emoji: string) => void; onGifSelect?: (url: string) => void; placement?: "above" | "below" }) {
+function EmojiPicker({ onSelect, onGifSelect, placement = "above", fixedPos }: { onSelect: (emoji: string) => void; onGifSelect?: (url: string) => void; placement?: "above" | "below"; fixedPos?: { bottom: number; left: number } }) {
   const [tab, setTab]           = useState<"emoji" | "gif">("emoji");
   const [gifQuery, setGifQuery] = useState("");
   const [gifs, setGifs]         = useState<{ id: string; url: string; preview: string }[]>([]);
@@ -72,7 +72,12 @@ function EmojiPicker({ onSelect, onGifSelect, placement = "above" }: { onSelect:
   }, [tab, gifQuery]);
 
   return (
-    <div className={`absolute z-50 ${placement === "below" ? "top-full mt-2" : "bottom-full mb-2"} right-0 w-[288px] bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl p-3`}>
+    <div
+      className={`z-[9999] w-[288px] bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl p-3 ${
+        fixedPos ? "fixed" : `absolute ${placement === "below" ? "top-full mt-2" : "bottom-full mb-2"} right-0`
+      }`}
+      style={fixedPos ? { bottom: fixedPos.bottom, left: fixedPos.left } : undefined}
+    >
       {/* Tab switcher */}
       <div className="flex gap-1.5 mb-2.5">
         <button
@@ -187,6 +192,7 @@ export default function CommunionPage() {
   const [dmsOpen, setDmsOpen]                 = useState(true);
   const [input, setInput]                     = useState("");
   const [mobileSidebarOpen, setMobileSidebar] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [messages, setMessages]               = useState<Message[]>([]);
   const [loading, setLoading]                 = useState(false);
   const [emojiTarget, setEmojiTarget]         = useState<string | null>(null);
@@ -241,6 +247,8 @@ export default function CommunionPage() {
   }, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef   = useRef<HTMLDivElement>(null);
+  const emojiInputBtnRef = useRef<HTMLButtonElement>(null);
+  const [emojiInputPos, setEmojiInputPos] = useState<{ bottom: number; left: number } | null>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const messagesEndRef  = useRef<HTMLDivElement>(null);
   const threadEndRef    = useRef<HTMLDivElement>(null);
@@ -843,10 +851,13 @@ export default function CommunionPage() {
       {/* ── Left sidebar ────────────────────────────────── */}
       <aside className={`flex-col bg-zinc-900 border-r border-zinc-800 overflow-y-auto z-40
         ${mobileSidebarOpen ? "flex absolute inset-0 w-full" : "hidden"}
-        sm:relative sm:flex sm:w-[240px] sm:shrink-0 sm:inset-auto`}>
+        ${sidebarCollapsed ? "sm:hidden" : "sm:relative sm:flex sm:w-[240px] sm:shrink-0 sm:inset-auto"}`}>
         {/* Workspace header */}
         <div className="flex items-center justify-between px-3 py-3 border-b border-zinc-800/60">
-          <button className="flex items-center gap-1.5 text-sm font-bold text-zinc-100 hover:text-white transition-colors">
+          <button
+            onClick={() => setSidebarCollapsed(true)}
+            className="flex items-center gap-1.5 text-sm font-bold text-zinc-100 hover:text-white transition-colors"
+          >
             {WORKSPACE.name}
             <ChevronDown size={14} className="text-zinc-500" />
           </button>
@@ -1041,6 +1052,19 @@ export default function CommunionPage() {
           )}
         </div>
 
+        {/* Badges */}
+        <div className="mt-4 px-2 sm:px-2 pl-12">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600 px-1 mb-2">Badges</p>
+          <div className="grid grid-cols-5 gap-1.5">
+            {Array.from({ length: 15 }).map((_, i) => (
+              <div
+                key={i}
+                className="badge-slot w-8 h-8 rounded-full border border-zinc-700 border-dashed"
+              />
+            ))}
+          </div>
+        </div>
+
         <div className="flex-1" />
       </aside>
 
@@ -1050,7 +1074,16 @@ export default function CommunionPage() {
         {/* Channel header */}
         <header className="flex items-center justify-between h-12 shrink-0 px-4 bg-zinc-950 border-b border-zinc-800 z-10">
           <div className="flex items-center gap-2">
-            {/* back to sidebar on mobile */}
+            {/* reopen sidebar on desktop when collapsed */}
+            {sidebarCollapsed && (
+              <button
+                onClick={() => setSidebarCollapsed(false)}
+                className="hidden sm:flex w-7 h-7 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-all -ml-1 mr-1"
+                title="Open sidebar"
+              >
+                <ChevronRight size={15} />
+              </button>
+            )}
             <button
               onClick={() => setMobileSidebar(true)}
               className="sm:hidden w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-all -ml-1 mr-1"
@@ -1469,13 +1502,20 @@ export default function CommunionPage() {
                 </button>
                 <div className="relative" ref={emojiTarget === "input" ? pickerRef : undefined}>
                   <button
-                    onClick={() => setEmojiTarget(emojiTarget === "input" ? null : "input")}
+                    ref={emojiInputBtnRef}
+                    onClick={() => {
+                      if (emojiTarget !== "input") {
+                        const rect = emojiInputBtnRef.current?.getBoundingClientRect();
+                        if (rect) setEmojiInputPos({ bottom: window.innerHeight - rect.top + 6, left: Math.max(8, rect.right - 288) });
+                      }
+                      setEmojiTarget(emojiTarget === "input" ? null : "input");
+                    }}
                     className="w-7 h-7 flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-all"
                     title="Emoji"
                   >
                     <Smile size={15} />
                   </button>
-                  {emojiTarget === "input" && <EmojiPicker onSelect={handleEmojiSelect} onGifSelect={(url) => { setGifUrl(url); setEmojiTarget(null); }} />}
+                  {emojiTarget === "input" && <EmojiPicker onSelect={handleEmojiSelect} onGifSelect={(url) => { setGifUrl(url); setEmojiTarget(null); }} fixedPos={emojiInputPos ?? undefined} />}
                 </div>
                 <button
                   onMouseDown={(e) => { e.preventDefault(); setInput((v) => v + "@"); textareaRef.current?.focus(); }}

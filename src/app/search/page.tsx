@@ -10,7 +10,7 @@ import SearchBar from "../../components/SearchBar";
 import SearchResults from "../../components/SearchResults";
 import AIResponseBox from "../../components/AIResponseBox";
 import NotesPanel from "../../components/NotesPanel";
-import DocsPanel from "../../components/DocsPanel";
+import DocsPanel, { type DocEntry } from "../../components/DocsPanel";
 import BiblePanel from "../../components/BiblePanel";
 
 type ResultItem = {
@@ -36,6 +36,12 @@ type DocumentData = {
   tags: string[];
 };
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const MOCK_RESULTS: ResultItem[] = [
   { id: "1", title: "Introduction to CORE", snippet: "CORE is your intelligent document and research platform, built for speed and precision.", relevance: 9.8, tags: ["overview", "getting-started"] },
   { id: "2", title: "Search & Discovery", snippet: "Use semantic search to surface relevant documents, cases, and findings across your workspace.", relevance: 9.2, tags: ["search", "discovery"] },
@@ -52,6 +58,16 @@ export default function SearchPage() {
   const [activeDoc, setActiveDoc] = useState<DocumentData | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [uploadResult, setUploadResult] = useState<{
+    type: "document" | "image";
+    name: string;
+    text?: string;
+    preview?: string;
+  } | null>(null);
+  const [uploadSaved, setUploadSaved] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [myDocs, setMyDocs] = useState<DocEntry[]>([]);
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [lastQuery, setLastQuery] = useState("");
@@ -62,6 +78,10 @@ export default function SearchPage() {
     try {
       const stored = localStorage.getItem("core_saved_items");
       if (stored) setSavedItems(JSON.parse(stored) as SavedItem[]);
+    } catch {}
+    try {
+      const storedDocs = localStorage.getItem("core_my_docs");
+      if (storedDocs) setMyDocs(JSON.parse(storedDocs) as DocEntry[]);
     } catch {}
   }, []);
 
@@ -159,6 +179,158 @@ export default function SearchPage() {
         tags: savedItem.tags ?? [],
       });
     }
+  };
+
+  const addDocToMyDocs = (entry: DocEntry) => {
+    setMyDocs((prev) => {
+      const updated = [entry, ...prev.filter((d) => d.name !== entry.name)];
+      const toSave = updated.map((d) => ({ ...d, preview: undefined }));
+      try { localStorage.setItem("core_my_docs", JSON.stringify(toSave)); } catch {}
+      return updated;
+    });
+  };
+
+  const removeMyDoc = (id: string) => {
+    setMyDocs((prev) => {
+      const entry = prev.find((d) => d.id === id);
+      if (entry?.preview) URL.revokeObjectURL(entry.preview);
+      const updated = prev.filter((d) => d.id !== id);
+      try { localStorage.setItem("core_my_docs", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const openDoc = (doc: DocEntry) => {
+    setActiveDoc({
+      id: doc.id,
+      title: doc.name,
+      content: doc.content ?? "(No text content could be extracted from this file.)",
+      tags: ["uploaded"],
+    });
+  };
+
+  const saveDocToCORE = async (doc: DocEntry) => {
+    const content = doc.content ?? `[${doc.type === "image" ? "Image" : "Document"}: ${doc.name}]`;
+    const newItem: SavedItem = {
+      id: doc.id,
+      title: doc.name,
+      savedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      content,
+      tags: ["uploaded"],
+    };
+    setSavedItems((prev) => {
+      const updated = [newItem, ...prev.filter((s) => s.id !== doc.id)];
+      try { localStorage.setItem("core_saved_items", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    setSavedOpen(true);
+    if (doc.content) {
+      await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id ?? "anonymous", title: doc.name, content: doc.content }),
+      });
+    }
+  };
+
+  const handleAddFilesToDocs = async (files: FileList) => {
+    for (const file of Array.from(files)) {
+      const id = `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      if (file.type.startsWith("image/")) {
+        const preview = URL.createObjectURL(file);
+        addDocToMyDocs({ id, name: file.name, size: formatSize(file.size), addedAt: new Date().toLocaleDateString(), type: "image", preview });
+      } else {
+        const form = new FormData();
+        form.append("file", file);
+        try {
+          const res = await fetch("/api/upload", { method: "POST", body: form });
+          const data = await res.json() as { text?: string };
+          addDocToMyDocs({
+            id,
+            name: file.name,
+            size: formatSize(file.size),
+            addedAt: new Date().toLocaleDateString(),
+            type: "document",
+            content: (res.ok && data.text) ? data.text : undefined,
+          });
+        } catch {
+          addDocToMyDocs({ id, name: file.name, size: formatSize(file.size), addedAt: new Date().toLocaleDateString(), type: "document" });
+        }
+      }
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    setUploadedFile(file);
+    setUploadError("");
+    setUploadSaved(false);
+    setUploadResult(null);
+
+    const docId = `doc-${Date.now()}`;
+    if (file.type.startsWith("image/")) {
+      const preview = URL.createObjectURL(file);
+      setUploadResult({ type: "image", name: file.name, preview });
+      setUploadStatus("done");
+      addDocToMyDocs({ id: docId, name: file.name, size: formatSize(file.size), addedAt: new Date().toLocaleDateString(), type: "image", preview });
+      return;
+    }
+
+    setUploadStatus("uploading");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      const data = await res.json() as { text?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Upload failed");
+      setUploadResult({ type: "document", name: file.name, text: data.text });
+      setUploadStatus("done");
+      addDocToMyDocs({ id: docId, name: file.name, size: formatSize(file.size), addedAt: new Date().toLocaleDateString(), type: "document", content: data.text });
+    } catch (err) {
+      setUploadError((err as Error).message);
+      setUploadStatus("error");
+    }
+  };
+
+  const clearUpload = () => {
+    if (uploadResult?.preview) URL.revokeObjectURL(uploadResult.preview);
+    setUploadedFile(null);
+    setUploadResult(null);
+    setUploadStatus("idle");
+    setUploadError("");
+    setUploadSaved(false);
+  };
+
+  const openUploadedDoc = () => {
+    if (!uploadResult?.text) return;
+    setActiveDoc({
+      id: `upload-${Date.now()}`,
+      title: uploadResult.name,
+      content: uploadResult.text,
+      tags: ["uploaded"],
+    });
+  };
+
+  const saveUploadedDoc = async () => {
+    if (!uploadResult?.text) return;
+    const newItem: SavedItem = {
+      id: `upload-${Date.now()}`,
+      title: uploadResult.name,
+      savedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      content: uploadResult.text,
+      tags: ["uploaded"],
+    };
+    setSavedItems((prev) => {
+      const updated = [newItem, ...prev];
+      try { localStorage.setItem("core_saved_items", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    setSavedOpen(true);
+    await fetch("/api/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user?.id ?? "anonymous", title: uploadResult.name, content: uploadResult.text }),
+    });
+    setUploadSaved(true);
   };
 
   return (
@@ -261,40 +433,90 @@ export default function SearchPage() {
               e.preventDefault();
               setDragging(false);
               const file = e.dataTransfer.files[0];
-              if (file) setUploadedFile(file);
+              if (file) void handleFileUpload(file);
             }}
             style={{
-              border: `1.5px dashed ${dragging ? "#f97316" : "rgba(249,115,22,0.35)"}`,
+              border: `1.5px dashed ${dragging ? "#f97316" : uploadStatus === "done" ? "rgba(249,115,22,0.6)" : uploadStatus === "error" ? "rgba(239,68,68,0.5)" : "rgba(249,115,22,0.35)"}`,
               borderRadius: "1rem",
               background: dragging ? "rgba(249,115,22,0.07)" : "rgba(255,255,255,0.03)",
               padding: "1.25rem 1.5rem",
               textAlign: "center",
-              cursor: "pointer",
               transition: "all 0.2s",
             }}
           >
-            <label style={{ cursor: "pointer", display: "block" }}>
-              <input
-                type="file"
-                accept=".pdf,.doc,.docx,.txt,.md"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) setUploadedFile(file);
-                }}
-              />
-              {uploadedFile ? (
-                <span style={{ color: "#f97316", fontWeight: 600, fontSize: "0.85rem" }}>
-                  {uploadedFile.name}
-                </span>
-              ) : (
+            {uploadStatus === "idle" && (
+              <label style={{ cursor: "pointer", display: "block" }}>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.md,image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleFileUpload(file);
+                    e.target.value = "";
+                  }}
+                />
                 <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>
-                  <span style={{ color: "#f97316", fontWeight: 700 }}>Click to upload</span> or drag and drop a document
+                  <span style={{ color: "#f97316", fontWeight: 700 }}>Click to upload</span> or drag and drop
                   <br />
-                  <span style={{ fontSize: "0.7rem" }}>PDF, DOC, DOCX, TXT, MD</span>
+                  <span style={{ fontSize: "0.7rem" }}>PDF · DOC · DOCX · TXT · MD · Images</span>
                 </span>
-              )}
-            </label>
+              </label>
+            )}
+
+            {uploadStatus === "uploading" && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                <svg style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "#f97316" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+                <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>Extracting — <span style={{ color: "#f97316" }}>{uploadedFile?.name}</span></span>
+              </div>
+            )}
+
+            {uploadStatus === "done" && uploadResult?.type === "image" && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={uploadResult.preview} alt={uploadResult.name} style={{ maxHeight: 140, maxWidth: "100%", borderRadius: "0.5rem", objectFit: "contain" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", justifyContent: "center" }}>
+                  <span style={{ color: "#f97316", fontSize: "0.78rem", fontWeight: 600 }}>{uploadResult.name}</span>
+                  <button onClick={clearUpload} style={{ fontSize: "0.72rem", color: "#64748b", background: "none", border: "1px solid #334155", borderRadius: "0.4rem", padding: "0.2rem 0.5rem", cursor: "pointer" }}>Remove</button>
+                </div>
+              </div>
+            )}
+
+            {uploadStatus === "done" && uploadResult?.type === "document" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                  <svg style={{ width: 14, height: 14, color: "#f97316", flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span style={{ color: "#f97316", fontSize: "0.82rem", fontWeight: 600 }}>{uploadResult.name}</span>
+                  <button onClick={clearUpload} style={{ marginLeft: "auto", fontSize: "0.72rem", color: "#64748b", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={openUploadedDoc}
+                    style={{ fontSize: "0.72rem", fontWeight: 600, color: "#0f172a", background: "#f97316", border: "none", borderRadius: "0.4rem", padding: "0.3rem 0.8rem", cursor: "pointer" }}
+                  >
+                    View Document
+                  </button>
+                  <button
+                    onClick={() => void saveUploadedDoc()}
+                    disabled={uploadSaved}
+                    style={{ fontSize: "0.72rem", fontWeight: 600, color: uploadSaved ? "#64748b" : "#f97316", background: "transparent", border: `1px solid ${uploadSaved ? "#334155" : "#f97316"}`, borderRadius: "0.4rem", padding: "0.3rem 0.8rem", cursor: uploadSaved ? "default" : "pointer" }}
+                  >
+                    {uploadSaved ? "Saved ✓" : "Save to CORE"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {uploadStatus === "error" && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ color: "#ef4444", fontSize: "0.8rem" }}>✕ {uploadError}</span>
+                <button onClick={clearUpload} style={{ fontSize: "0.72rem", color: "#f97316", background: "none", border: "1px solid #f97316", borderRadius: "0.4rem", padding: "0.2rem 0.6rem", cursor: "pointer" }}>Try again</button>
+              </div>
+            )}
           </div>
           <p className="max-w-xl text-sm leading-6 text-slate-400 text-center lg:text-left">
             ܟܘܪܐ ܗܘ ܡܚܫܒܬܐ ܕܝܕܥܬܐ ܕܡܫܡܫܐ ܒܗܘܫܒܥܐ ܕܐܘܡܢܘܬܐ. ܣܠܩ ܟܬܒ̈ܐ، ܒܩܝ ܒܟܠܗ ܟܬܒ ܒܗܘܢܐ ܣܟܘܠܬܢܐ ܥܡܝܩܐ، ܘܦܪܘܫ ܣܘܟ̈ܠܐ ܚܫܚ̈ܐ ܠܡܫܘܚܬܐ ܥܬܝܕܐ ܒܟܠ ܙܒܢ.
@@ -348,7 +570,13 @@ export default function SearchPage() {
               onToggle={() => setSavedOpen((o) => !o)}
             />
             <NotesPanel />
-            <DocsPanel />
+            <DocsPanel
+              docs={myDocs}
+              onAddFiles={(files) => void handleAddFilesToDocs(files)}
+              onRemove={removeMyDoc}
+              onOpen={openDoc}
+              onSaveToCORE={(doc) => void saveDocToCORE(doc)}
+            />
           </div>
         </div>
       </main>
@@ -358,6 +586,30 @@ export default function SearchPage() {
           document={activeDoc}
           onClose={() => setActiveDoc(null)}
           onSummarize={() => {}}
+          onSaveToCORE={
+            savedItems.some((s) => s.id === activeDoc.id)
+              ? undefined
+              : () => {
+                  const doc = myDocs.find((d) => d.id === activeDoc.id);
+                  if (doc) void saveDocToCORE(doc);
+                  else {
+                    // came from search results or AI notes — save directly
+                    const newItem: SavedItem = {
+                      id: activeDoc.id,
+                      title: activeDoc.title,
+                      savedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                      content: activeDoc.content,
+                      tags: activeDoc.tags,
+                    };
+                    setSavedItems((prev) => {
+                      const updated = [newItem, ...prev.filter((s) => s.id !== activeDoc.id)];
+                      try { localStorage.setItem("core_saved_items", JSON.stringify(updated)); } catch {}
+                      return updated;
+                    });
+                    setSavedOpen(true);
+                  }
+                }
+          }
         />
       )}
     </div>

@@ -11,9 +11,10 @@ type DocumentViewerProps = {
   document: DocumentData | null;
   onClose: () => void;
   onSummarize: (id: string) => void;
+  onSaveToCORE?: () => void;
 };
 
-export default function DocumentViewer({ document, onClose, onSummarize }: DocumentViewerProps) {
+export default function DocumentViewer({ document, onClose, onSummarize, onSaveToCORE }: DocumentViewerProps) {
   if (!document) return null;
 
   return (
@@ -41,7 +42,15 @@ export default function DocumentViewer({ document, onClose, onSummarize }: Docum
           {document.content}
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex justify-end gap-3">
+          {onSaveToCORE && (
+            <button
+              onClick={onSaveToCORE}
+              className="rounded-full border border-orange-500/40 bg-orange-500/10 px-4 py-2 text-sm font-semibold text-orange-400 transition hover:bg-orange-500/20"
+            >
+              Save to CORE
+            </button>
+          )}
           <button
             onClick={() => onSummarize(document.id)}
             className="rounded-full bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-500"
