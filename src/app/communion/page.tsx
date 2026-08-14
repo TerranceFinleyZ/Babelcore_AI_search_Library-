@@ -438,7 +438,7 @@ export default function CommunionPage() {
             });
             if (row.user_id !== myId) {
               setDmUnread((prev) => {
-                const active = window.__communionActiveChannel__ as string | undefined;
+                const active = (window as unknown as Record<string, unknown>).__communionActiveChannel__ as string | undefined;
                 if (active === chId) return prev;
                 return { ...prev, [chId]: (prev[chId] ?? 0) + 1 };
               });
@@ -449,7 +449,7 @@ export default function CommunionPage() {
             const parentMsgId = chId.replace("thread:", "");
             if (myMsgIdsRef.current.has(parentMsgId)) {
               setThreadUnread((prev) => {
-                const activeThread = window.__communionThreadMsgId__;
+                const activeThread = (window as unknown as Record<string, unknown>).__communionThreadMsgId__ as string | undefined;
                 if (activeThread === parentMsgId) return prev;
                 return { ...prev, [parentMsgId]: (prev[parentMsgId] ?? 0) + 1 };
               });
@@ -568,7 +568,7 @@ export default function CommunionPage() {
 
   // Sync active channel to window for the unread closure, and clear unread when switching into a DM
   useEffect(() => {
-    window.__communionActiveChannel__ = activeChannel;
+    (window as unknown as Record<string, unknown>).__communionActiveChannel__ = activeChannel;
     if (activeChannel.startsWith("dm:")) {
       setDmUnread((prev) => {
         if (!prev[activeChannel]) return prev;
@@ -586,7 +586,7 @@ export default function CommunionPage() {
 
   // Sync active thread to window and clear thread unread when opening a thread
   useEffect(() => {
-    window.__communionThreadMsgId__ = threadMsgId ?? "";
+    (window as unknown as Record<string, unknown>).__communionThreadMsgId__ = threadMsgId ?? "";
     if (threadMsgId) {
       setThreadUnread((prev) => {
         if (!prev[threadMsgId]) return prev;
