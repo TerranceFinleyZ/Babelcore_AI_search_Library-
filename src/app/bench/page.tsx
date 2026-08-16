@@ -900,10 +900,14 @@ export default function BenchPage() {
             /* Tutorial view */
             <div className="flex flex-col gap-4">
               <div className="rounded-2xl bg-zinc-900/60 border border-orange-500/10 overflow-hidden" style={{ aspectRatio: "16/9" }}>
-                <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-zinc-600">
-                  <Play size={48} className="text-orange-500/40" />
-                  <span className="text-sm tracking-widest uppercase text-zinc-600">Video Tutorial</span>
-                </div>
+                <video
+                  className="w-full h-full object-cover"
+                  controls
+                  playsInline
+                >
+                  <source src="/Tutor.mp4" type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
               </div>
             </div>
           ) : activeSidebarItem === "Goals" ? (
