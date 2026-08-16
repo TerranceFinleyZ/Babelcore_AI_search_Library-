@@ -30,7 +30,7 @@ import {
   Home,
   ArrowLeft,
   Video,
-  Phone,
+  Trophy,
   X,
   Trash2,
 } from "lucide-react";
@@ -220,6 +220,7 @@ export default function CommunionPage() {
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState("");
   const [sidebarSearchFocused, setSidebarSearchFocused] = useState(false);
   const [showPinned, setShowPinned]           = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
   const [messageMenuId, setMessageMenuId]     = useState<string | null>(null);
   const [reportMsgId, setReportMsgId]         = useState<string | null>(null);
   const [reportCategory, setReportCategory]   = useState("other");
@@ -1113,8 +1114,12 @@ export default function CommunionPage() {
               <Users size={13} />
               <span className="hidden sm:inline">Members</span>
             </button>
-            <button className="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all">
-              <Phone size={15} />
+            <button
+              onClick={() => setShowAchievements((v) => !v)}
+              className={`w-8 h-8 rounded-md flex items-center justify-center transition-all ${showAchievements ? "bg-orange-500/15 text-orange-400" : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"}`}
+              title="Achievements"
+            >
+              <Trophy size={15} />
             </button>
             <button className="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all">
               <Video size={15} />
@@ -1541,6 +1546,105 @@ export default function CommunionPage() {
             <strong className="text-zinc-600">Enter</strong> to send · <strong className="text-zinc-600">Shift+Enter</strong> for new line
           </p>
         </div>
+
+        {/* Achievements panel */}
+        {showAchievements && (
+          <div className="absolute inset-y-0 right-0 w-72 bg-zinc-900 border-l border-zinc-800 flex flex-col z-20 shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <Trophy size={14} className="text-orange-400" />
+                <span className="text-sm font-bold text-zinc-100">Achievements</span>
+              </div>
+              <button onClick={() => setShowAchievements(false)} className="text-zinc-500 hover:text-zinc-200 transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              {[
+                {
+                  emoji: "🔥",
+                  name: "First Message",
+                  desc: "Send your first message in any channel.",
+                  unlocked: true,
+                },
+                {
+                  emoji: "📖",
+                  name: "Bible Scholar",
+                  desc: "Read at least 5 Bible chapters using the Bible panel.",
+                  unlocked: false,
+                },
+                {
+                  emoji: "🤝",
+                  name: "Team Player",
+                  desc: "React to 10 messages from other members.",
+                  unlocked: false,
+                },
+                {
+                  emoji: "📌",
+                  name: "Noteworthy",
+                  desc: "Pin your first message in a channel.",
+                  unlocked: false,
+                },
+                {
+                  emoji: "🚀",
+                  name: "Power User",
+                  desc: "Use Hyrum AI, Core Canvas, and Communion in the same day.",
+                  unlocked: false,
+                },
+                {
+                  emoji: "💎",
+                  name: "Babelcore Pro",
+                  desc: "Upgrade to Babelcore Pro to unlock this badge.",
+                  unlocked: false,
+                  pro: true,
+                },
+                {
+                  emoji: "🎯",
+                  name: "Goal Setter",
+                  desc: "Add and complete 5 goals in the Goals panel.",
+                  unlocked: false,
+                },
+                {
+                  emoji: "🌟",
+                  name: "Community Pillar",
+                  desc: "Post in every default channel at least once.",
+                  unlocked: false,
+                },
+              ].map((badge) => (
+                <div
+                  key={badge.name}
+                  className={`flex items-start gap-3 p-3 rounded-2xl border transition-all ${
+                    badge.unlocked
+                      ? "border-orange-500/30 bg-orange-500/5"
+                      : "border-zinc-800 bg-zinc-800/30 opacity-60"
+                  }`}
+                >
+                  <div className={`text-2xl leading-none shrink-0 mt-0.5 ${badge.unlocked ? "" : "grayscale"}`}>
+                    {badge.emoji}
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-xs font-semibold ${badge.unlocked ? "text-zinc-100" : "text-zinc-400"}`}>
+                        {badge.name}
+                      </span>
+                      {badge.unlocked && (
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-orange-400 border border-orange-500/30 rounded-full px-1.5 py-0.5">
+                          Unlocked
+                        </span>
+                      )}
+                      {(badge as any).pro && !badge.unlocked && (
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600 border border-zinc-700 rounded-full px-1.5 py-0.5">
+                          Pro
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">{badge.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Pinned messages panel */}
         {showPinned && !isDM && (
@@ -2009,7 +2113,21 @@ export default function CommunionPage() {
                     const msg = currentMessages.find((m) => m.id === reportMsgId);
                     const desc = reportDesc.trim() || `Message by ${msg?.user ?? "unknown"}: "${msg?.text?.slice(0, 200) ?? ""}"`;
                     try {
-                      const res = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: reportCategory, description: desc }) });
+                      const res = await fetch("/api/report", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          category: reportCategory,
+                          description: desc,
+                          source: "communion",
+                          reporterId: myId,
+                          msgId: reportMsgId,
+                          msgText: msg?.text ?? "",
+                          msgUserId: msg?.userId ?? "",
+                          msgUser: msg?.user ?? "",
+                          attachmentUrl: msg?.attachmentUrl ?? null,
+                        }),
+                      });
                       setReportStatus(res.ok ? "done" : "error");
                     } catch { setReportStatus("error"); }
                   }}

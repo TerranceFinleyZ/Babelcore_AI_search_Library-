@@ -36,6 +36,7 @@ import {
   Power,
   GripVertical,
   Code2,
+  Lock,
 } from "lucide-react";
 
 function GithubIcon({ size = 18 }: { size?: number }) {
@@ -79,10 +80,10 @@ const workspaceItems = [
   { icon: <BookOpen size={14} />, label: "Bible" },
   { icon: <Newspaper size={14} />, label: "News" },
   { icon: <Play size={14} />, label: "Clip.bun", href: "https://clipbun-io.netlify.app/", external: true },
-  { icon: <Briefcase size={14} />, label: "Careers" },
-  { icon: <Users size={14} />, label: "Team" },
+  { icon: <Briefcase size={14} />, label: "Careers", locked: true },
+  { icon: <Users size={14} />, label: "Team", locked: true },
   { icon: <Mail size={14} />, label: "Newsletter" },
-  { icon: <GithubIcon size={14} />, label: "GitHub", github: true },
+  { icon: <GithubIcon size={14} />, label: "GitHub", github: true, locked: true },
   { divider: true },
   { icon: <FileText size={14} />, label: "Reports", danger: true },
 ];
@@ -95,10 +96,26 @@ const recentItems = [
   { label: "Bible Study — Romans", type: "bible", updated: "Last week", panel: "Bible" },
 ];
 
+// ── Admin report type ──────────────────────────────────────
+type AdminReport = {
+  id: string;
+  source: string;
+  category: string;
+  description: string;
+  reporter_id: string | null;
+  msg_id: string | null;
+  msg_text: string | null;
+  msg_user: string | null;
+  msg_user_id: string | null;
+  attachment_url: string | null;
+  status: string;
+  created_at: string;
+};
+
 // ── Quick actions ──────────────────────────────────────────
 const quickActions = [
-  { label: "Hyrum AI", icon: <Bot size={16} />, href: "/search" },
-  { label: "Core Canvas", icon: <PenTool size={16} />, href: "/workspace" },
+  { label: "Hyrum AI", icon: <Bot size={16} />, href: "/search", locked: true },
+  { label: "Core Canvas", icon: <PenTool size={16} />, href: "/workspace", locked: true },
   { label: "Communion", icon: <Share2 size={16} />, href: "/communion" },
 ];
 
@@ -146,6 +163,7 @@ const NEW_TESTAMENT: { name: string; chapters: number }[] = [
 const MISSIONS = [
   "Read the Entire Bible",
   "Evangelize to a stranger in person",
+  "Create something beautiful, then destroy it",
   "Start a Bible study",
   "Start a nonprofit charity",
   "Start a Revival",
@@ -154,6 +172,10 @@ const MISSIONS = [
 export default function BenchPage() {
   const [activeIcon, setActiveIcon] = useState("Home");
   const [activeSidebarItem, setActiveSidebarItem] = useState<string | null>(null);
+  const [isPro, setIsPro] = useState(false);
+  const [proLoading, setProLoading] = useState(true);
+  const [showProModal, setShowProModal] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [goalItems, setGoalItems] = useState<{ id: number; text: string; done: boolean }[]>(() => {
     try {
       const stored = localStorage.getItem("bench_goals");
@@ -161,9 +183,9 @@ export default function BenchPage() {
     } catch { return []; }
   });
   const [goalInput, setGoalInput] = useState("");
-  const [missionChecked, setMissionChecked] = useState<boolean[]>([false, false, false, false, false]);
+  const [missionChecked, setMissionChecked] = useState<boolean[]>([false, false, false, false, false, false]);
   const [missionCompleted, setMissionCompleted] = useState<boolean[]>(() => {
-    try { const s = localStorage.getItem("bench_missions"); return s ? JSON.parse(s) : [false, false, false, false, false]; } catch { return [false, false, false, false, false]; }
+    try { const s = localStorage.getItem("bench_missions"); return s ? JSON.parse(s) : [false, false, false, false, false, false]; } catch { return [false, false, false, false, false, false]; }
   });
   const [missionFlash, setMissionFlash] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState("");
@@ -174,10 +196,46 @@ export default function BenchPage() {
   });
   const [githubOpen, setGithubOpen] = useState(false);
 
+  // Fetch Babelcore Pro status on mount
+  useEffect(() => {
+    fetch("/api/stripe/status")
+      .then((r) => r.json())
+      .then((d) => setIsPro(d.isPro === true))
+      .catch(() => {})
+      .finally(() => setProLoading(false));
+  }, []);
+
+  // Handle ?pro=success redirect from Stripe
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("pro") === "success") {
+      setIsPro(true);
+      setProLoading(false);
+      window.history.replaceState({}, "", "/bench");
+    }
+  }, []);
+
+  async function startCheckout() {
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const data = await res.json() as { url?: string };
+      if (data.url) window.location.href = data.url;
+    } catch {}
+    setCheckoutLoading(false);
+  }
+
+  function openLockedFeature(open: () => void) {
+    if (isPro) { open(); } else { setShowProModal(true); }
+  }
+
   const [reportCategory, setReportCategory] = useState("");
   const [reportDesc, setReportDesc] = useState("");
   const [reportStatus, setReportStatus] = useState<"idle" | "loading" | "submitted" | "error">("idle");
   const [reportError, setReportError] = useState("");
+  const [adminReports, setAdminReports] = useState<AdminReport[]>([]);
+  const [adminReportsLoading, setAdminReportsLoading] = useState(false);
+  const [adminTab, setAdminTab] = useState<"submit" | "inbox">("submit");
   const dragGoalId = useRef<number | null>(null);
   const today = new Date();
   const [calYear, setCalYear] = useState(today.getFullYear());
@@ -261,6 +319,17 @@ export default function BenchPage() {
       .then(d => { setStockQuotes(d.quotes ?? []); setStocksLoading(false); })
       .catch(() => { setStocksError(true); setStocksLoading(false); });
   }, [activeSidebarItem]);
+
+  // Load submitted reports from Supabase when admin opens the Reports panel inbox
+  useEffect(() => {
+    if (activeSidebarItem !== "Reports" || adminTab !== "inbox") return;
+    setAdminReportsLoading(true);
+    fetch("/api/admin/reports")
+      .then(r => r.json())
+      .then(d => setAdminReports(d.reports ?? []))
+      .catch(() => {})
+      .finally(() => setAdminReportsLoading(false));
+  }, [activeSidebarItem, adminTab]);
 
   useEffect(() => {
     if (!selectedStock) return;
@@ -690,6 +759,11 @@ export default function BenchPage() {
                     isDanger ? "text-zinc-600 group-hover:text-red-500" : isActive ? "text-orange-400" : "text-zinc-600 group-hover:text-orange-400"
                   }`}>{item.icon}</span>
                   {item.label}
+                  {(item as any).locked && (
+                    isPro
+                      ? <Lock size={10} className="ml-auto text-orange-400/70 group-hover:text-orange-300 transition-colors shrink-0" style={{ strokeDasharray: 0 }} />
+                      : <Lock size={10} className="ml-auto text-zinc-700 group-hover:text-zinc-500 transition-colors shrink-0" />
+                  )}
                 </div>
               );
               return item.href ? (
@@ -703,7 +777,9 @@ export default function BenchPage() {
                   <Link key={item.label} href={item.href}>{content}</Link>
                 )
               ) : (item as any).github ? (
-                <div key={item.label} onClick={() => setGithubOpen(true)}>{content}</div>
+                <div key={item.label} onClick={() => openLockedFeature(() => setGithubOpen(true))}>{content}</div>
+              ) : (item as any).locked ? (
+                <div key={item.label} onClick={() => openLockedFeature(() => setActiveSidebarItem((prev) => prev === item.label ? null : (item.label ?? null)))}>{content}</div>
               ) : (
                 <div key={item.label} onClick={() => setActiveSidebarItem((prev) => prev === item.label ? null : (item.label ?? null))}>{content}</div>
               );
@@ -963,7 +1039,7 @@ export default function BenchPage() {
                       try { localStorage.setItem("bench_missions", JSON.stringify(updated)); } catch {}
                       return updated;
                     });
-                    setMissionChecked([false, false, false, false, false]);
+                    setMissionChecked([false, false, false, false, false, false]);
                     setMissionFlash(true);
                     setTimeout(() => setMissionFlash(false), 2500);
                   }}
@@ -1221,7 +1297,7 @@ export default function BenchPage() {
                       const res = await fetch("/api/report", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ category: reportCategory, description: reportDesc.trim() }),
+                        body: JSON.stringify({ category: reportCategory, description: reportDesc.trim(), source: "bench", reporterId: user?.id ?? "" }),
                       });
                       if (!res.ok) {
                         const d = await res.json().catch(() => ({})) as { error?: string };
@@ -1290,6 +1366,125 @@ export default function BenchPage() {
                     <p className="text-xs text-red-400 text-center">{reportError}</p>
                   )}
                 </form>
+              )}
+            </div>
+          ) : activeSidebarItem === "Reports" ? (
+            <div className="flex flex-col gap-5 max-w-lg">
+              <h2 className="text-lg font-bold text-zinc-100 tracking-tight">Reports</h2>
+              <div className="flex gap-2">
+                {(["submit", "inbox"] as const).map((t) => (
+                  <button key={t} onClick={() => setAdminTab(t)}
+                    className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                      adminTab === t ? "bg-orange-500/20 border-orange-500/40 text-orange-300" : "border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+                    }`}
+                  >{t === "submit" ? "Submit Report" : "Admin Inbox"}</button>
+                ))}
+              </div>
+              {adminTab === "submit" ? (
+                <>
+                  {reportStatus === "submitted" ? (
+                    <div className="rounded-2xl border border-orange-500/30 bg-orange-500/5 px-5 py-8 flex flex-col items-center gap-3 text-center">
+                      <div className="w-10 h-10 rounded-full bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 text-lg">✓</div>
+                      <p className="text-sm font-semibold text-orange-300">Report Submitted</p>
+                      <p className="text-xs text-zinc-500">Thank you. We'll review it shortly.</p>
+                      <button onClick={() => { setReportStatus("idle"); setReportCategory(""); setReportDesc(""); setReportError(""); }}
+                        className="mt-2 px-4 py-2 rounded-xl border border-zinc-700 bg-zinc-900 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all">
+                        Submit another report
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!reportCategory || !reportDesc.trim()) return;
+                      setReportStatus("loading"); setReportError("");
+                      try {
+                        const res = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ category: reportCategory, description: reportDesc.trim(), source: "bench", reporterId: user?.id ?? "" }) });
+                        if (!res.ok) { const d = await res.json().catch(() => ({})) as { error?: string }; setReportError(d.error ?? "Failed."); setReportStatus("error"); return; }
+                        setReportStatus("submitted");
+                      } catch { setReportError("Could not reach the server."); setReportStatus("error"); }
+                    }} className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Category</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: "sexual-content", label: "Sexual Content", color: "text-red-400", border: "border-red-500/30", bg: "bg-red-500/10" },
+                            { value: "glitch", label: "Glitch / Bug", color: "text-yellow-400", border: "border-yellow-500/30", bg: "bg-yellow-500/10" },
+                            { value: "error", label: "Error", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-500/10" },
+                            { value: "other", label: "General Issue", color: "text-zinc-300", border: "border-zinc-600", bg: "bg-zinc-800/60" },
+                          ].map((cat) => (
+                            <button key={cat.value} type="button" onClick={() => setReportCategory(cat.value)}
+                              className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all text-left ${
+                                reportCategory === cat.value ? `${cat.bg} ${cat.border} ${cat.color}` : "border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+                              }`}>{cat.label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Description</label>
+                        <textarea value={reportDesc} onChange={(e) => setReportDesc(e.target.value)}
+                          placeholder="Describe what happened…" rows={5} maxLength={1000}
+                          className="px-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-orange-500/40 resize-none transition-colors" />
+                        <p className="text-[10px] text-zinc-600 text-right">{reportDesc.length}/1000</p>
+                      </div>
+                      <button type="submit" disabled={!reportCategory || !reportDesc.trim() || reportStatus === "loading"}
+                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border ${
+                          reportCategory && reportDesc.trim() && reportStatus !== "loading"
+                            ? "bg-orange-500/20 border-orange-500/40 text-orange-300 hover:bg-orange-500/30"
+                            : "border-zinc-800 bg-zinc-900/40 text-zinc-600 cursor-not-allowed"
+                        }`}>{reportStatus === "loading" ? "Submitting…" : "Submit Report"}</button>
+                      {reportStatus === "error" && <p className="text-xs text-red-400 text-center">{reportError}</p>}
+                    </form>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {adminReportsLoading ? (
+                    <div className="flex justify-center py-10"><div className="w-5 h-5 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" /></div>
+                  ) : adminReports.length === 0 ? (
+                    <p className="text-sm text-zinc-600 text-center py-10">No open reports.</p>
+                  ) : adminReports.map((r) => (
+                    <div key={r.id} className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+                              r.status === "open" ? "text-red-400 border-red-500/30 bg-red-500/10"
+                              : r.status === "resolved" ? "text-green-400 border-green-500/30 bg-green-500/10"
+                              : "text-zinc-500 border-zinc-700 bg-zinc-800"
+                            }`}>{r.status}</span>
+                            <span className="text-[10px] text-zinc-600">{r.source} · {r.category}</span>
+                          </div>
+                          <span className="text-[10px] text-zinc-700">{new Date(r.created_at).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {r.status !== "resolved" && (
+                            <button onClick={async () => {
+                              await fetch("/api/admin/reports", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id, status: "resolved" }) });
+                              setAdminReports((prev) => prev.map((x) => x.id === r.id ? { ...x, status: "resolved" } : x));
+                            }} className="px-2.5 py-1 rounded-lg text-[10px] font-semibold border border-green-500/30 text-green-400 hover:bg-green-500/10 transition-all">Resolve</button>
+                          )}
+                          {r.msg_id && (
+                            <button onClick={async () => {
+                              if (!confirm("Delete this message? Cannot be undone.")) return;
+                              await fetch("/api/admin/reports", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ msgId: r.msg_id, reportId: r.id }) });
+                              setAdminReports((prev) => prev.filter((x) => x.id !== r.id));
+                            }} className="px-2.5 py-1 rounded-lg text-[10px] font-semibold border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all">Delete Msg</button>
+                          )}
+                        </div>
+                      </div>
+                      {r.msg_text && (
+                        <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/60 px-3 py-2">
+                          <p className="text-[10px] text-zinc-500 mb-0.5">Reported message · <span className="text-zinc-400">{r.msg_user ?? "Unknown"}</span></p>
+                          <p className="text-xs text-zinc-300 leading-relaxed line-clamp-3">{r.msg_text}</p>
+                          {r.attachment_url && <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-orange-400 hover:underline mt-1 block">View attachment</a>}
+                        </div>
+                      )}
+                      <p className="text-xs text-zinc-400 leading-relaxed">{r.description}</p>
+                      <p className="text-[10px] text-zinc-700">Reporter: {r.reporter_id ?? "anonymous"}</p>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ) : activeSidebarItem === "Planner" ? (() => {
@@ -1503,16 +1698,29 @@ export default function BenchPage() {
           {/* Quick actions */}
           <div className="mb-6 mt-3">
             <div className="flex gap-3 flex-wrap justify-center sm:justify-start">
-              {quickActions.map((action) => (
-                <Link
-                  key={action.label}
-                  href={action.href}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 border border-orange-500/10 hover:border-orange-500/30 hover:bg-zinc-800 text-sm text-zinc-300 hover:text-zinc-100 transition-all duration-150 group"
-                >
-                  <span className="text-orange-400 group-hover:text-orange-300 transition-colors">{action.icon}</span>
-                  {action.label}
-                </Link>
-              ))}
+              {quickActions.map((action) => {
+                const isLocked = (action as any).locked;
+                const canAccess = !isLocked || isPro;
+                const lockEl = isLocked && (
+                  isPro
+                    ? <Lock size={12} className="text-orange-400/70 transition-colors ml-0.5 shrink-0" />
+                    : <Lock size={12} className="text-zinc-600 group-hover:text-zinc-400 transition-colors ml-0.5 shrink-0" />
+                );
+                const cls = "flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 border border-orange-500/10 hover:border-orange-500/30 hover:bg-zinc-800 text-sm text-zinc-300 hover:text-zinc-100 transition-all duration-150 group cursor-pointer";
+                return canAccess ? (
+                  <Link key={action.label} href={action.href} className={cls}>
+                    <span className="text-orange-400 group-hover:text-orange-300 transition-colors">{action.icon}</span>
+                    {action.label}
+                    {lockEl}
+                  </Link>
+                ) : (
+                  <button key={action.label} onClick={() => setShowProModal(true)} className={cls}>
+                    <span className="text-orange-400 group-hover:text-orange-300 transition-colors">{action.icon}</span>
+                    {action.label}
+                    {lockEl}
+                  </button>
+                );
+              })}
             </div>
           </div>
           </>
@@ -1522,6 +1730,55 @@ export default function BenchPage() {
           <div className="h-8" />
         </main>
       </div>
+
+      {/* ── Babelcore Pro upgrade modal ───────────────────── */}
+      {showProModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+          <div className="bg-zinc-950 border border-orange-500/30 rounded-3xl p-8 flex flex-col items-center gap-5 shadow-2xl max-w-sm w-full mx-4">
+            {/* Icon */}
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-orange-500/10 border border-orange-500/30">
+              <Lock size={26} className="text-orange-400" />
+            </div>
+
+            {/* Headline */}
+            <div className="text-center flex flex-col gap-1">
+              <h2 className="text-lg font-bold text-zinc-100 tracking-tight">Babelcore Pro</h2>
+              <p className="text-xs text-zinc-400 leading-relaxed max-w-[22rem]">
+                This feature is exclusive to Babelcore Pro members.<br />
+                Upgrade once — unlock everything, forever.
+              </p>
+            </div>
+
+            {/* Feature list */}
+            <ul className="w-full flex flex-col gap-2">
+              {["Hyrum AI", "Core Canvas", "Careers", "Team", "GitHub"].map((f) => (
+                <li key={f} className="flex items-center gap-2.5 text-xs text-zinc-300">
+                  <span className="w-4 h-4 rounded-full bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                  </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+
+            {/* CTA */}
+            <button
+              onClick={startCheckout}
+              disabled={checkoutLoading}
+              className="w-full py-3 rounded-2xl bg-orange-500 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-900/30"
+            >
+              {checkoutLoading ? "Redirecting…" : "Upgrade to Babelcore Pro"}
+            </button>
+
+            <button
+              onClick={() => setShowProModal(false)}
+              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Clip.bun modal ─────────────────────────────────── */}
       {clipbunModalOpen && (

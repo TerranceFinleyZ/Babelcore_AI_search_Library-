@@ -2,7 +2,7 @@ import { clerkMiddleware } from "@clerk/nextjs/server";
 
 export default clerkMiddleware(async (auth, request) => {
   const path = new URL(request.url).pathname;
-  const isPublic = /^\/(sign-in|sign-up|$)/.test(path);
+  const isPublic = /^\/(sign-in|sign-up|login|$)/.test(path);
   if (!isPublic) {
     await auth.protect();
   }

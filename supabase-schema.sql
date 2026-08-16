@@ -1,6 +1,34 @@
 -- Run this once in the Supabase SQL Editor (Dashboard → SQL Editor → New query)
 -- If you already ran the previous version, run only the NEW TABLES section below
 
+-- ── Babelcore Pro subscribers ───────────────────────────────────────────────
+create table if not exists pro_users (
+  user_id             text primary key,
+  stripe_customer_id  text,
+  stripe_session_id   text,
+  is_active           boolean default true,
+  created_at          timestamptz default now()
+);
+-- Run this line separately in the Supabase SQL editor:
+-- ALTER TABLE pro_users ENABLE ROW LEVEL SECURITY;
+
+-- ── User reports (from /communion and /bench) ────────────────────────────────
+create table if not exists reports (
+  id              uuid primary key default gen_random_uuid(),
+  source          text not null,
+  category        text not null,
+  description     text not null,
+  reporter_id     text,
+  msg_id          text,
+  msg_text        text,
+  msg_user_id     text,
+  msg_user        text,
+  attachment_url  text,
+  status          text not null default 'open',
+  created_at      timestamptz default now()
+);
+-- ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
 -- ── Channels table (C: dynamic channel creation) ───────────────────────────
 create table if not exists channels (
   id         text primary key,
@@ -9,14 +37,12 @@ create table if not exists channels (
   created_at timestamptz default now()
 );
 
--- Seed the five default channels
-insert into channels (id, name, pinned) values
-  ('general',       'general',       false),
-  ('goals',         'goals',         false),
-  ('research',      'research',      false),
-  ('prayer',        'prayer',        false),
-  ('announcements', 'announcements', true)
-on conflict (id) do nothing;
+-- Seed the five default channels (WHERE NOT EXISTS avoids duplicate-key errors)
+insert into channels (id, name, pinned) select 'general',       'general',       false where not exists (select 1 from channels where id = 'general');
+insert into channels (id, name, pinned) select 'goals',         'goals',         false where not exists (select 1 from channels where id = 'goals');
+insert into channels (id, name, pinned) select 'research',      'research',      false where not exists (select 1 from channels where id = 'research');
+insert into channels (id, name, pinned) select 'prayer',        'prayer',        false where not exists (select 1 from channels where id = 'prayer');
+insert into channels (id, name, pinned) select 'announcements', 'announcements', true  where not exists (select 1 from channels where id = 'announcements');
 
 -- ── Workspace users table (B: real user directory) ─────────────────────────
 create table if not exists workspace_users (
