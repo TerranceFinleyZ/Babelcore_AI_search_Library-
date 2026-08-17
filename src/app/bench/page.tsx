@@ -227,6 +227,7 @@ export default function BenchPage() {
   }
 
   function openLockedFeature(open: () => void) {
+    if (proLoading) return;
     if (isPro) { open(); } else { setShowProModal(true); }
   }
 
@@ -1719,7 +1720,7 @@ export default function BenchPage() {
                     {lockEl}
                   </Link>
                 ) : (
-                  <button key={action.label} onClick={() => setShowProModal(true)} className={cls}>
+                  <button key={action.label} onClick={() => { if (!proLoading) setShowProModal(true); }} className={cls}>
                     <span className="text-orange-400 group-hover:text-orange-300 transition-colors">{action.icon}</span>
                     {action.label}
                     {lockEl}
