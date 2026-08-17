@@ -197,35 +197,23 @@ export default function BenchPage() {
   });
   const [githubOpen, setGithubOpen] = useState(false);
 
-  // Fetch Babelcore Pro status on mount
+  // Fetch pro status — skip the DB check when returning from Stripe payment
+  // to prevent the async fetch from overriding the optimistic isPro=true
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("pro") === "success") {
+      setIsPro(true);
+      setProLoading(false);
+      setProSuccessToast(true);
+      window.history.replaceState({}, "", "/bench");
+      const toastTimer = setTimeout(() => setProSuccessToast(false), 5000);
+      return () => clearTimeout(toastTimer);
+    }
     fetch("/api/stripe/status")
       .then((r) => r.json())
       .then((d) => setIsPro(d.isPro === true))
       .catch(() => {})
       .finally(() => setProLoading(false));
-  }, []);
-
-  // Handle ?pro=success redirect from Stripe — optimistically unlock, then confirm via webhook
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("pro") !== "success") return;
-    setIsPro(true);
-    setProLoading(false);
-    setProSuccessToast(true);
-    window.history.replaceState({}, "", "/bench");
-    // Poll status up to 8× over 16 s so the webhook write is reflected
-    let attempts = 0;
-    const interval = setInterval(() => {
-      attempts++;
-      fetch("/api/stripe/status")
-        .then((r) => r.json())
-        .then((d) => { if (d.isPro) clearInterval(interval); })
-        .catch(() => {});
-      if (attempts >= 8) clearInterval(interval);
-    }, 2000);
-    const toastTimer = setTimeout(() => setProSuccessToast(false), 5000);
-    return () => { clearInterval(interval); clearTimeout(toastTimer); };
   }, []);
 
   async function startCheckout() {
