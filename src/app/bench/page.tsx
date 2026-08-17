@@ -176,6 +176,7 @@ export default function BenchPage() {
   const [proLoading, setProLoading] = useState(true);
   const [showProModal, setShowProModal] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [proSuccessToast, setProSuccessToast] = useState(false);
   const [goalItems, setGoalItems] = useState<{ id: number; text: string; done: boolean }[]>(() => {
     try {
       const stored = localStorage.getItem("bench_goals");
@@ -205,14 +206,26 @@ export default function BenchPage() {
       .finally(() => setProLoading(false));
   }, []);
 
-  // Handle ?pro=success redirect from Stripe
+  // Handle ?pro=success redirect from Stripe — optimistically unlock, then confirm via webhook
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("pro") === "success") {
-      setIsPro(true);
-      setProLoading(false);
-      window.history.replaceState({}, "", "/bench");
-    }
+    if (params.get("pro") !== "success") return;
+    setIsPro(true);
+    setProLoading(false);
+    setProSuccessToast(true);
+    window.history.replaceState({}, "", "/bench");
+    // Poll status up to 8× over 16 s so the webhook write is reflected
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      fetch("/api/stripe/status")
+        .then((r) => r.json())
+        .then((d) => { if (d.isPro) clearInterval(interval); })
+        .catch(() => {});
+      if (attempts >= 8) clearInterval(interval);
+    }, 2000);
+    const toastTimer = setTimeout(() => setProSuccessToast(false), 5000);
+    return () => { clearInterval(interval); clearTimeout(toastTimer); };
   }, []);
 
   async function startCheckout() {
@@ -1734,6 +1747,15 @@ export default function BenchPage() {
           <div className="h-8" />
         </main>
       </div>
+
+      {/* ── Payment success toast ───────────────────────── */}
+      {proSuccessToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3 rounded-2xl bg-zinc-900 border border-orange-500/40 shadow-2xl shadow-orange-900/30 animate-in fade-in slide-in-from-top-4 duration-300">
+          <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+          <span className="text-sm font-medium text-zinc-100">Payment successful — welcome to Babelcore Pro!</span>
+          <button onClick={() => setProSuccessToast(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors ml-1 text-base leading-none">&times;</button>
+        </div>
+      )}
 
       {/* ── Babelcore Pro upgrade modal ───────────────────── */}
       {showProModal && (
